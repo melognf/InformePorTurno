@@ -1,3 +1,13 @@
+/* ========= Firebase ========= */
+import { db } from "./firebase-config.js";
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
 // ======== Fecha / Día automático ========
 function parseDateLocal(iso) {
   if (!iso) return null;
@@ -588,3 +598,72 @@ pdf.save("informe-produccion.pdf");
     showEditUI(visible);
   };
 })();
+
+/* =========================
+   SINCRONIZACIÓN CON FIRESTORE
+   ========================= */
+
+// Colección principal para todos los informes
+const informesRef = collection(db, "informes_produccion");
+
+// 🔹 Genera un ID único por fecha + turno
+function getInformeId() {
+  const fecha = document.getElementById("fecha")?.value || "sin_fecha";
+  const turno = document.getElementById("turno")?.value || "sin_turno";
+  return `${fecha}_${turno}`.replace(/\s+/g, "_");
+}
+
+// 🔹 Enviar los datos actuales a Firestore
+async function syncToFirestore() {
+  const id = getInformeId();
+  const data = {
+    encabezado: JSON.parse(localStorage.getItem("encabezado_v1") || "{}"),
+    tabla: JSON.parse(localStorage.getItem("tabla_produccion_v1") || "[]"),
+    corridas: JSON.parse(localStorage.getItem("corridas") || "[]"),
+    novedades: JSON.parse(localStorage.getItem("novedades_v1") || "[]"),
+    timestamp: new Date().toISOString()
+  };
+  try {
+    await setDoc(doc(informesRef, id), data);
+    console.log("📤 Datos sincronizados con Firestore:", id);
+  } catch (err) {
+    console.error("❌ Error al sincronizar:", err);
+  }
+}
+
+// 🔹 Escuchar cambios en Firestore (sincronización en vivo)
+function listenFirestore() {
+  const id = getInformeId();
+  onSnapshot(doc(informesRef, id), (snap) => {
+    if (!snap.exists()) return;
+    const data = snap.data();
+    console.log("🔄 Actualización recibida:", id, data);
+
+    // Evita sobrescribir si el cambio fue local
+    if (document.hidden) {
+      localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
+      localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
+      localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
+      localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
+
+      // Re-renderizar UI
+      restoreEncabezado();
+      restoreTabla();
+      restoreCorridas();
+      loadNovedades();
+    }
+  });
+}
+
+// 🔹 Lanzar sincronización automática cada cierto tiempo
+document.addEventListener("DOMContentLoaded", () => {
+  listenFirestore();
+
+  // Subir cambios cuando se genera informe o se borra todo
+  document.getElementById("btnInforme").addEventListener("click", syncToFirestore);
+  document.getElementById("cgClear").addEventListener("click", syncToFirestore);
+  document.getElementById("nvClear").addEventListener("click", syncToFirestore);
+
+  // Y cada 2 minutos de manera automática
+  setInterval(syncToFirestore, 120000);
+});
