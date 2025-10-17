@@ -666,3 +666,33 @@ document.addEventListener("DOMContentLoaded", () => {
   // Y cada 2 minutos de manera automática
   setInterval(syncToFirestore, 120000);
 });
+
+/* =========================
+   🔹 Restaurar desde Firestore al iniciar
+   ========================= */
+async function restoreFromFirestoreOnLoad() {
+  const id = getInformeId();
+  try {
+    const snap = await getDoc(doc(informesRef, id));
+    if (snap.exists()) {
+      const data = snap.data();
+      console.log("☁️ Datos restaurados desde Firestore:", id);
+
+      localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
+      localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
+      localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
+      localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
+
+      restoreEncabezado();
+      restoreTabla();
+      restoreCorridas();
+      loadNovedades();
+    } else {
+      console.log("⚠️ No existe el documento remoto aún:", id);
+    }
+  } catch (err) {
+    console.error("❌ Error al restaurar Firestore:", err);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", restoreFromFirestoreOnLoad);
