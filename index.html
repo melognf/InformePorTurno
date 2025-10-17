@@ -11,6 +11,7 @@
 
 <body>
   <main class="tabla-contenedor">
+
     <!-- ===== ENCABEZADO ===== -->
     <table class="tabla-produccion">
       <thead>
@@ -35,8 +36,13 @@
                 <input type="text" id="dia" class="encabezado-input" readonly placeholder="Día" />
               </div>
               <div class="logo-encabezado">
-                <img src="multimedia/Captura.JPG" alt="MG Monte Grande" />
-              </div>
+  <button id="modeBtn" class="mode-btn-header">
+    <span class="mode-icon"></span>
+    <span class="mode-label"></span>
+  </button>
+  <img src="multimedia/Captura.JPG" alt="MG Monte Grande" />
+</div>
+
             </div>
           </th>
         </tr>
@@ -75,6 +81,7 @@
               <option value="18-06">18:00 → 06:00</option>
             </select>
           </label>
+          
         </div>
       </header>
 
@@ -160,17 +167,7 @@
     </section>
   </main>
 
-  <!-- ===== MODAL DE MODO ===== -->
-  <div id="modalModo" class="modal-modo">
-    <div class="modal-content">
-      <h2>¿Cómo querés utilizar la app?</h2>
-      <p>Seleccioná un modo de uso:</p>
-      <div class="modal-botones">
-        <button id="btnModoLectura" class="btn-lectura">MODO LECTURA</button>
-        <button id="btnModoCarga" class="btn-carga">MODO CARGA</button>
-      </div>
-    </div>
-  </div>
+  
 
   <script src="app.js"></script>
 </body>

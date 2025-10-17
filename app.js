@@ -509,43 +509,82 @@ pdf.save("informe-produccion.pdf");
   }
 });
 
-// ===== Modal de selección de modo =====
-document.addEventListener("DOMContentLoaded", () => {
-  const modal = document.getElementById("modalModo");
-  const btnLectura = document.getElementById("btnModoLectura");
-  const btnCarga = document.getElementById("btnModoCarga");
 
-  // Mostrar el modal apenas carga
-  modal.classList.add("activo");
+/* =========================
+   Botón de MODO (CARGA / LECTURA)
+   ========================= */
+(function () {
+  const MODE_KEY = "modo_app_v1";
 
-  btnLectura.addEventListener("click", () => {
-    modal.classList.remove("activo");
-    activarModoLectura();
+  // Referencia o crea el botón (por si no existe aún en el HTML)
+  let modeBtn = document.getElementById("modeBtn");
+  if (!modeBtn) {
+    modeBtn = document.createElement("button");
+    modeBtn.id = "modeBtn";
+    modeBtn.className = "mode-btn-header";
+    modeBtn.innerHTML =
+      '<span class="mode-icon"></span><span class="mode-label"></span>';
+    const logoBox = document.querySelector(".logo-encabezado");
+    if (logoBox) logoBox.prepend(modeBtn);
+    else document.body.appendChild(modeBtn);
+  }
+
+  const label = modeBtn.querySelector(".mode-label");
+
+  // --- Mostrar u ocultar zonas editables según el modo ---
+  function showEditUI(show) {
+    const selectors = [
+      ".cg-form",
+      ".form-novedad",
+      "#btnInforme",
+      "#cgClear",
+      "#nvClear",
+      "#formBarra button",
+      "#formNovedad button"
+    ];
+    selectors.forEach((sel) =>
+      document.querySelectorAll(sel).forEach((el) => {
+        if (el.id === "modeBtn" || el.closest("#modeBtn")) return;
+        el.style.display = show ? "" : "none";
+      })
+    );
+
+    // Encabezado
+    ["turno", "tn", "fecha"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = !show;
+    });
+
+    // Bloquea edición en lectura
+    document
+      .querySelectorAll(".tabla-produccion tbody td")
+      .forEach((td) =>
+        td.setAttribute("contenteditable", show ? "true" : "false")
+      );
+  }
+
+  // --- Aplica el modo ---
+  function applyMode(mode) {
+    const lectura = mode === "lectura";
+    modeBtn.classList.toggle("is-lectura", lectura);
+    label.textContent = lectura ? "Modo: LECTURA" : "Modo: CARGA";
+    showEditUI(!lectura);
+    localStorage.setItem(MODE_KEY, mode);
+  }
+
+  // --- Cambiar modo al hacer clic ---
+  modeBtn.addEventListener("click", () => {
+    const newMode = modeBtn.classList.contains("is-lectura")
+      ? "carga"
+      : "lectura";
+    applyMode(newMode);
   });
 
-  btnCarga.addEventListener("click", () => {
-    modal.classList.remove("activo");
-    activarModoCarga();
-  });
-});
+  // --- Inicialización ---
+  applyMode(localStorage.getItem(MODE_KEY) || "carga");
 
-// ===== Función MODO LECTURA =====
-function activarModoLectura() {
-  document.body.dataset.modo = "lectura";
-
-  // Oculta todos los botones, formularios y campos editables
-  document.querySelectorAll("button, .cg-form, .form-novedad, .acciones").forEach(el => el.style.display = "none");
-  document.querySelectorAll("[contenteditable]").forEach(el => el.setAttribute("contenteditable", "false"));
-  console.log("📖 App en modo LECTURA");
-}
-
-// ===== Función MODO CARGA =====
-function activarModoCarga() {
-  document.body.dataset.modo = "carga";
-
-  // Restaura visibilidad de los controles
-  document.querySelectorAll("button, .cg-form, .form-novedad, .acciones").forEach(el => el.style.display = "");
-  document.querySelectorAll(".tabla-produccion [contenteditable]").forEach(el => el.setAttribute("contenteditable", "true"));
-  console.log("🧰 App en modo CARGA");
-}
-
+  // --- Sobrescribe la función toggleBotoneras ---
+  window.toggleBotoneras = function (visible) {
+    showEditUI(visible);
+  };
+})();
