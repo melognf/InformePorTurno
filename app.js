@@ -639,21 +639,20 @@ function listenFirestore() {
     const data = snap.data();
     console.log("🔄 Actualización recibida:", id, data);
 
-    // Evita sobrescribir si el cambio fue local
-    if (document.hidden) {
-      localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
-      localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
-      localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
-      localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
+    // 🔹 Actualiza el contenido en todos los dispositivos
+    localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
+    localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
+    localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
+    localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
 
-      // Re-renderizar UI
-      restoreEncabezado();
-      restoreTabla();
-      restoreCorridas();
-      loadNovedades();
-    }
+    // 🔹 Re-renderiza la interfaz
+    restoreEncabezado();
+    restoreTabla();
+    restoreCorridas();
+    loadNovedades();
   });
 }
+
 
 // 🔹 Lanzar sincronización automática cada cierto tiempo
 document.addEventListener("DOMContentLoaded", () => {
