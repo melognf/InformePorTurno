@@ -1,0 +1,726 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #fff;
+}
+
+/* ===== CONTENEDOR ===== */
+.tabla-contenedor {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px;
+  overflow-x: auto;
+}
+
+/* ===== TABLA ===== */
+.tabla-produccion {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: center;
+  border: 2px solid #000;
+  table-layout: fixed;
+}
+
+/* ===== ENCABEZADO CON LOGO ===== */
+.encabezado-con-logo {
+  background: #000;
+  padding: 0;
+}
+
+.encabezado-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+}
+
+.inputs-encabezado {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.logo-encabezado img {
+  width: 120px;
+  height: auto;
+  background: #fff;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+/* ===== INPUTS ===== */
+.encabezado-input {
+  border: none;
+  outline: none;
+  height: 35px;
+  font: 600 15px "Segoe UI", Arial, sans-serif;
+  color: #fff;
+  background: #000;
+  text-align: center;
+  border-radius: 0;
+  appearance: none;
+  transition: background 0.2s, color 0.2s;
+}
+
+.encabezado-input:focus {
+  background: #111;
+  box-shadow: inset 0 0 0 2px #e40000;
+}
+
+select.encabezado-input {
+  background: #000 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='white' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5H5z'/%3E%3C/svg%3E") no-repeat right 8px center;
+  background-size: 12px;
+  padding-right: 22px;
+  cursor: pointer;
+}
+
+.encabezado-input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.encabezado-input::placeholder { color: #aaa; }
+
+/* ===== SEGUNDA FILA ===== */
+.encabezado-secundario th {
+  background: #bfbfbf;
+  color: #000;
+  font-weight: bold;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid #999;
+}
+
+/* ===== CUERPO ===== */
+.tabla-produccion th,
+.tabla-produccion td {
+  border: 1px solid #999;
+  padding: 5px 6px;
+  font-size: 13px;
+}
+
+.tabla-produccion th:first-child {
+  background: #000;
+  color: #fff;
+  text-align: left;
+  padding-left: 8px;
+  width: 90px;
+}
+
+.tabla-produccion td[contenteditable="true"] {
+  background: #d9d9d9;
+  outline: none;
+  cursor: text;
+}
+
+/* ===== RESPONSIVE TABLA ===== */
+@media (max-width: 768px) {
+  .encabezado-flex {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .inputs-encabezado {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .logo-encabezado img {
+    align-self: flex-end;
+    width: 90px;
+  }
+}
+
+/* ===================================================
+   CRONOGRAMA — VERSIÓN ESTABLE Y 100% RESPONSIVE
+   =================================================== */
+.cronograma {
+  margin-top: 18px;
+  border: 2px solid #000;
+  background: #fff;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+}
+
+/* Cabecera */
+.cronograma-head {
+  background: #000;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 2px solid #000;
+}
+.cronograma-head h3 { margin: 0; font-size: 16px; letter-spacing: .5px; }
+.cronograma-controles select {
+  background: #111;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+
+
+/* ===== EJE HORIZONTAL ===== */
+.cg-eje {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr); /* ✅ 12 columnas exactas */
+  margin-left: 110px;
+  height: 36px;
+  background: #fff;
+  border-bottom: 2px solid #000;
+  box-sizing: border-box;
+}
+.cg-eje .lab {
+  text-align: center;
+  font-size: 12px;
+  color: #222;
+  white-space: nowrap;
+  padding-bottom: 4px;
+}
+
+/* ===== GRILLA ===== */
+.cg-grid {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: #fff;
+  border-top: none;
+}
+
+.cg-row {
+  display: flex;
+  border-bottom: 1px solid #bdbdbd;
+}
+
+.cg-linea {
+  width: 110px;
+  background: #000;
+  color: #fff;
+  padding: 6px 8px;
+  font-weight: 700;
+  border-right: 1px solid #bdbdbd;
+  flex-shrink: 0;
+}
+
+.cg-lane {
+  position: relative;
+  flex: 1;
+  background: #d9d9d9;
+  border-left: 1px solid #ccc;
+  overflow: visible; /* muy importante */
+  transition: height 0.3s ease;
+}
+
+.cg-bar {
+  position: absolute;
+  height: 24px;       /* todas igual */
+  line-height: 24px;  /* centra el texto */
+  background: #e10600;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 8px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
+}
+
+
+
+/* Scroll personalizado */
+.cronograma::-webkit-scrollbar { height: 6px; }
+.cronograma::-webkit-scrollbar-thumb { background: #aaa; border-radius: 3px; }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .cg-linea { width: 90px; font-size: 12px; }
+  .cg-lane { height: 34px; }
+  .cg-bar  { height: 22px; font-size: 12px; }
+  .cg-eje .lab { font-size: 11px; }
+}
+
+@media (max-width: 480px) {
+  .cg-linea { width: 80px; font-size: 11px; }
+  .cg-bar { font-size: 11px; }
+}
+
+/* ===== Ajuste de alineación móvil ===== */
+@media (max-width: 768px) {
+  .cg-eje {
+    margin-left: 90px; /* igual que .cg-linea */
+    width: calc(100% - 90px);
+  }
+  
+}
+@media (max-width: 480px) {
+  .cg-eje {
+    margin-left: 80px; /* igual que .cg-linea */
+    width: calc(100% - 80px);
+  }
+}
+
+.novedades {
+  margin-top: 24px;
+  border: 2px solid #000;
+  background: #f9f9f9;
+}
+
+.novedades h2 {
+  background: #000;
+  color: #fff;
+  padding: 10px;
+  font-size: 18px;
+  margin: 0;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.linea-card {
+  border-top: 1px solid #000;
+  margin: 0;
+  padding: 10px;
+  background: #f6f6f6;
+}
+
+.linea-card h3 {
+  background: #000;
+  color: #fff;
+  margin: -10px -10px 8px -10px;
+  padding: 6px 10px;
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+
+.linea-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.linea-card li {
+  padding: 6px 0;
+  border-bottom: 1px solid #ddd;
+  line-height: 1.4;
+  font-size: 13px;
+}
+
+.linea-card li:last-child {
+  border-bottom: none;
+}
+
+.linea-card b {
+  color: #000;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+@media (max-width: 768px) {
+  .novedades h2 {
+    font-size: 16px;
+  }
+  .linea-card h3 {
+    font-size: 14px;
+  }
+  .linea-card li {
+    font-size: 12px;
+    padding: 5px 0;
+  }
+}
+
+.form-novedad {
+  border: 2px solid #000;
+  background: #f3f3f3;
+  padding: 12px;
+  margin-top: 20px;
+}
+
+.form-novedad h3 {
+  margin-top: 0;
+  background: #000;
+  color: #fff;
+  padding: 6px 10px;
+  font-size: 16px;
+}
+
+.form-novedad form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.form-novedad label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1 1 180px;
+}
+
+.form-novedad label.full {
+  flex: 1 1 100%;
+}
+
+.form-novedad input,
+.form-novedad select,
+.form-novedad textarea {
+  padding: 6px 8px;
+  border: 1px solid #999;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.form-novedad button {
+  background: #e10600;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s;
+}
+
+.form-novedad button:hover {
+  background: #b40000;
+}
+
+.form-novedad #nvClear {
+  background: #555;
+}
+
+.form-novedad #nvClear:hover {
+  background: #222;
+}
+
+@media (max-width: 768px) {
+  .form-novedad form {
+    flex-direction: column;
+  }
+  .form-novedad label {
+    flex: 1 1 100%;
+  }
+}
+
+/* ===== Controles visualmente consistentes (inputs/select/textarea) ===== */
+.form-novedad input,
+.form-novedad select,
+.form-novedad textarea,
+.cg-form input,
+.cg-form select {
+  background: #fff;
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.form-novedad input:focus,
+.form-novedad select:focus,
+.form-novedad textarea:focus,
+.cg-form input:focus,
+.cg-form select:focus {
+  outline: none;
+  border-color: #e10600;
+  box-shadow: 0 0 0 3px rgba(225,6,0,.18);
+}
+
+/* ===== Separación vertical entre secciones ===== */
+.novedades,
+.cg-form,
+.form-novedad {
+  margin-top: 32px;
+  margin-bottom: 32px;
+}
+
+/* ===== Botoneras: más margen superior e inferior ===== */
+.form-novedad .acciones {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px 0 10px;   /* ↑ más aire arriba y abajo */
+}
+
+/* En el form del cronograma no hay contenedor de botones, así que doy aire a los botones */
+.cg-form form > button {
+  margin-top: 14px;      /* ↑ separa del resto de controles */
+  margin-bottom: 8px;    /* ↓ aire con lo que sigue */
+}
+
+/* ===== Botones modernos (primario y secundario) ===== */
+.form-novedad button[type="submit"],
+.cg-form form > button[type="submit"] {
+  background: #e10600;
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .18s, box-shadow .18s, transform .04s;
+  box-shadow: 0 1px 0 rgba(0,0,0,.25), inset 0 -2px 0 rgba(0,0,0,.15);
+}
+
+.form-novedad button[type="submit"]:hover,
+.cg-form form > button[type="submit"]:hover {
+  background: #c50500;
+}
+
+.form-novedad button[type="submit"]:active,
+.cg-form form > button[type="submit"]:active {
+  transform: translateY(1px);
+}
+
+.form-novedad button[type="submit"]:focus-visible,
+.cg-form form > button[type="submit"]:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(225,6,0,.35);
+}
+
+/* Secundario (Borrar/Limpiar) */
+#nvClear,
+.cg-form #cgClear {
+  background: #3e3e3e;
+  color: #fff;
+  border: 1px solid #2b2b2b;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .18s, box-shadow .18s, transform .04s;
+}
+
+#nvClear:hover,
+.cg-form #cgClear:hover {
+  background: #2d2d2d;
+}
+
+#nvClear:active,
+.cg-form #cgClear:active {
+  transform: translateY(1px);
+}
+
+#nvClear:focus-visible,
+.cg-form #cgClear:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(0,0,0,.35);
+}
+
+/* ===== Móvil: botones a ancho completo si preferís ese look ===== */
+@media (max-width: 480px) {
+  .form-novedad .acciones button,
+  .cg-form form > button {
+    width: 100%;
+  }
+}
+
+/* Evita que textos largos se salgan en Novedades */
+.linea-card li{
+  max-width: 100%;
+  /* Ajustes de quiebre */
+  overflow-wrap: anywhere;     /* moderno */
+  word-break: break-word;      /* fallback */
+  word-wrap: break-word;       /* legado */
+  hyphens: auto;               /* guiones automáticos si hay diccionario */
+  white-space: normal;         /* que fluya como párrafo */
+  line-height: 1.45;
+}
+
+/* Que la hora no se corte */
+.linea-card li b{
+  white-space: nowrap;
+  margin-right: 6px;
+}
+
+/* Por si algún <ul> se achica, que nunca provoque overflow */
+.linea-card ul{
+  min-width: 0;
+}
+
+/* ===== Botón Generar PDF ===== */
+#btnInforme{
+  --mg-red: #e10600;
+  --mg-red-dk: #b80000;
+  --shadow: 0 8px 20px rgba(225, 6, 0, .35);
+  --radius: 12px;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 12px 18px 12px 48px;      /* lugar para el ícono */
+  border: 0;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--mg-red) 0%, var(--mg-red-dk) 100%);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: .2px;
+  cursor: pointer;
+  box-shadow: var(--shadow), inset 0 -2px 0 rgba(0,0,0,.18);
+  transition: transform .06s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+/* ícono de impresora */
+#btnInforme::before{
+  content: "🖨️";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.25));
+}
+
+/* brillo sutil al hover */
+#btnInforme:hover{
+  filter: brightness(1.05);
+  box-shadow: 0 10px 28px rgba(225, 6, 0, .45), inset 0 -2px 0 rgba(0,0,0,.18);
+}
+
+/* “clic” cortito */
+#btnInforme:active{
+  transform: translateY(1px);
+}
+
+/* foco accesible */
+#btnInforme:focus-visible{
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.7), var(--shadow);
+}
+
+/* ===== Estado ocupado (generando) ===== */
+#btnInforme.is-busy{
+  cursor: wait;
+  filter: grayscale(.2) brightness(.95);
+}
+
+/* spinner */
+#btnInforme.is-busy::after{
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.55);
+  border-top-color: #fff;
+  transform: translateY(-50%);
+  animation: mg-spin 0.8s linear infinite;
+}
+
+/* texto alternativo cuando está ocupado (opcional) */
+#btnInforme.is-busy > .btn-text-gen{
+  visibility: hidden;
+}
+#btnInforme.is-busy > .btn-text-wip{
+  position: absolute;
+  left: 48px;
+  right: 36px;
+  text-align: left;
+  visibility: visible;
+}
+
+@keyframes mg-spin{
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+/* Respeto a usuarios con movimiento reducido */
+@media (prefers-reduced-motion: reduce){
+  #btnInforme,
+  #btnInforme:hover{ transition: none; }
+  #btnInforme.is-busy::after{ animation: none; }
+}
+
+/* ===== Modal de selección de modo ===== */
+.modal-modo {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .3s ease;
+  font-family: inherit;
+}
+
+.modal-modo.activo {
+  visibility: visible;
+  opacity: 1;
+}
+
+.modal-content {
+  background: #121829;
+  color: #fff;
+  padding: 28px 32px;
+  border-radius: 14px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+}
+
+.modal-content h2 {
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+  color: #ff4747;
+}
+
+.modal-content p {
+  margin-bottom: 18px;
+  color: #ddd;
+}
+
+.modal-botones {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.modal-botones button {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .1s ease, filter .2s ease;
+}
+
+.btn-lectura {
+  background: #3b3b3b;
+  color: #fff;
+}
+.btn-lectura:hover { filter: brightness(1.2); }
+
+.btn-carga {
+  background: #e10600;
+  color: #fff;
+}
+.btn-carga:hover { filter: brightness(1.1); }
+
+.modal-botones button:active {
+  transform: translateY(1px);
+}
