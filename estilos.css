@@ -690,3 +690,29 @@ select.encabezado-input {
     gap: 4px;
   }
 }
+
+/* ===== Fix para el input de fecha en móviles ===== */
+input[type="date"] {
+  background-color: var(--panel, #1a1f2e);
+  color: var(--ink, #fff);
+  border: 1px solid var(--muted, #777);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 15px;
+  font-family: inherit;
+  width: 100%;
+  appearance: none;           /* limpia estilos del SO */
+  -webkit-appearance: none;   /* Safari / iOS */
+}
+
+input[type="date"]:focus {
+  outline: 2px solid var(--accent, #1170d6);
+  outline-offset: 1px;
+}
+
+@media (max-width: 768px) {
+  input[type="date"] {
+    background-color: #fff;   /* asegura contraste en móviles */
+    color: #000;
+  }
+}
