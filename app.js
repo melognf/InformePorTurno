@@ -600,7 +600,7 @@ pdf.save("informe-produccion.pdf");
 })();
 
 /* =========================
-   SINCRONIZACIÓN CON FIRESTORE
+   🔄 SINCRONIZACIÓN FIRESTORE COMPLETA
    ========================= */
 
 // Colección principal para todos los informes
@@ -613,7 +613,7 @@ function getInformeId() {
   return `${fecha}_${turno}`.replace(/\s+/g, "_");
 }
 
-// 🔹 Enviar los datos actuales a Firestore
+// 🔹 Subir datos locales a Firestore
 async function syncToFirestore() {
   const id = getInformeId();
   const data = {
@@ -631,45 +631,7 @@ async function syncToFirestore() {
   }
 }
 
-// 🔹 Escuchar cambios en Firestore (sincronización en vivo)
-function listenFirestore() {
-  const id = getInformeId();
-  onSnapshot(doc(informesRef, id), (snap) => {
-    if (!snap.exists()) return;
-    const data = snap.data();
-    console.log("🔄 Actualización recibida:", id, data);
-
-    // 🔹 Actualiza el contenido en todos los dispositivos
-    localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
-    localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
-    localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
-    localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
-
-    // 🔹 Re-renderiza la interfaz
-    restoreEncabezado();
-    restoreTabla();
-    restoreCorridas();
-    loadNovedades();
-  });
-}
-
-
-// 🔹 Lanzar sincronización automática cada cierto tiempo
-document.addEventListener("DOMContentLoaded", () => {
-  listenFirestore();
-
-  // Subir cambios cuando se genera informe o se borra todo
-  document.getElementById("btnInforme").addEventListener("click", syncToFirestore);
-  document.getElementById("cgClear").addEventListener("click", syncToFirestore);
-  document.getElementById("nvClear").addEventListener("click", syncToFirestore);
-
-  // Y cada 2 minutos de manera automática
-  setInterval(syncToFirestore, 120000);
-});
-
-/* =========================
-   🔹 Restaurar desde Firestore al iniciar
-   ========================= */
+// 🔹 Restaurar datos desde Firestore al iniciar
 async function restoreFromFirestoreOnLoad() {
   const id = getInformeId();
   try {
@@ -695,4 +657,45 @@ async function restoreFromFirestoreOnLoad() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", restoreFromFirestoreOnLoad);
+// 🔹 Escuchar cambios en Firestore (sincronización entre dispositivos)
+function listenFirestore() {
+  const id = getInformeId();
+  onSnapshot(doc(informesRef, id), (snap) => {
+    if (!snap.exists()) return;
+    const data = snap.data();
+    console.log("🔁 Cambio remoto detectado:", id);
+
+    localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
+    localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
+    localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
+    localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
+
+    restoreEncabezado();
+    restoreTabla();
+    restoreCorridas();
+    loadNovedades();
+  });
+}
+
+// 🔹 Inicializa la sincronización
+document.addEventListener("DOMContentLoaded", () => {
+  restoreFromFirestoreOnLoad();
+  listenFirestore();
+
+  // Subir cambios cuando se genera informe o se borra todo
+  ["btnInforme", "cgClear", "nvClear"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", syncToFirestore);
+  });
+
+  // Sincronización automática cada 2 minutos
+  setInterval(syncToFirestore, 120000);
+
+  // Subida automática al modificar algo localmente
+  ["input", "change"].forEach(evt => {
+    window.addEventListener(evt, () => {
+      clearTimeout(window._syncTimer);
+      window._syncTimer = setTimeout(syncToFirestore, 1500);
+    });
+  });
+});
