@@ -602,6 +602,7 @@ pdf.save("informe-produccion.pdf");
 /* =========================
    🔄 SINCRONIZACIÓN FIRESTORE COMPLETA
    ========================= */
+let isSyncing = false;
 
 // Colección principal para todos los informes
 const informesRef = collection(db, "informes_produccion");
@@ -615,6 +616,9 @@ function getInformeId() {
 
 // 🔹 Subir datos locales a Firestore
 async function syncToFirestore() {
+  if (isSyncing) return; // evita bucles infinitos
+  isSyncing = true;
+
   const id = getInformeId();
   const data = {
     encabezado: JSON.parse(localStorage.getItem("encabezado_v1") || "{}"),
@@ -623,13 +627,18 @@ async function syncToFirestore() {
     novedades: JSON.parse(localStorage.getItem("novedades_v1") || "[]"),
     timestamp: new Date().toISOString()
   };
+
   try {
     await setDoc(doc(informesRef, id), data);
     console.log("📤 Datos sincronizados con Firestore:", id);
   } catch (err) {
     console.error("❌ Error al sincronizar:", err);
+  } finally {
+    // breve pausa antes de permitir otra sincronización
+    setTimeout(() => (isSyncing = false), 1000);
   }
 }
+
 
 // 🔹 Restaurar datos desde Firestore al iniciar
 async function restoreFromFirestoreOnLoad() {
@@ -661,10 +670,14 @@ async function restoreFromFirestoreOnLoad() {
 function listenFirestore() {
   const id = getInformeId();
   onSnapshot(doc(informesRef, id), (snap) => {
-    if (!snap.exists()) return;
+    if (!snap.exists() || isSyncing) return; // evita sobrescribir mientras se sube
     const data = snap.data();
-    console.log("🔁 Cambio remoto detectado:", id);
+    console.log("🔄 Actualización recibida:", id);
 
+    // Vaciar antes de restaurar (evita duplicados)
+    localStorage.clear();
+
+    // Reescribir localStorage desde la nube
     localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
     localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
     localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
@@ -676,6 +689,7 @@ function listenFirestore() {
     loadNovedades();
   });
 }
+
 
 // 🔹 Inicializa la sincronización
 document.addEventListener("DOMContentLoaded", () => {
