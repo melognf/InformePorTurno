@@ -600,22 +600,12 @@ pdf.save("informe-produccion.pdf");
 })();
 
 /* =========================
-   🔄 SINCRONIZACIÓN FIRESTORE (FINAL)
+   🔄 SINCRONIZACIÓN FIRESTORE (SIN ROMPER FUNCIONES)
    ========================= */
-import { db } from "./firebase-config.js";
-import {
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
 let isSyncing = false;
 let isRestoring = false;
-let lastUpdateTimestamp = null;
+let lastUpdate = null;
 
-// Colección principal
 const informesRef = collection(db, "informes_produccion");
 
 // 🔹 ID único por fecha + turno
@@ -625,92 +615,75 @@ function getInformeId() {
   return `${fecha}_${turno}`.replace(/\s+/g, "_");
 }
 
-// 🔹 Reúne todo el estado local
-function gatherLocalData() {
-  return {
-    encabezado: JSON.parse(localStorage.getItem("encabezado_v1") || "{}"),
-    tabla: JSON.parse(localStorage.getItem("tabla_produccion_v1") || "[]"),
-    corridas: JSON.parse(localStorage.getItem("corridas") || "[]"),
-    novedades: JSON.parse(localStorage.getItem("novedades_v1") || "[]"),
-    updatedAt: new Date().toISOString()
-  };
-}
-
-// 🔹 Sube datos locales a Firestore
+// 🔹 Subir datos locales a Firestore
 async function syncToFirestore() {
   if (isSyncing || isRestoring) return;
   isSyncing = true;
 
   const id = getInformeId();
-  const data = gatherLocalData();
+  const data = {
+    encabezado: JSON.parse(localStorage.getItem("encabezado_v1") || "{}"),
+    tabla: JSON.parse(localStorage.getItem("tabla_produccion_v1") || "[]"),
+    corridas: JSON.parse(localStorage.getItem("corridas") || "[]"),
+    novedades: JSON.parse(localStorage.getItem("novedades_v1") || "[]"),
+    timestamp: Date.now()
+  };
 
   try {
     await setDoc(doc(informesRef, id), data, { merge: true });
+    lastUpdate = data.timestamp;
     console.log("📤 Sincronizado con Firestore:", id);
-    lastUpdateTimestamp = data.updatedAt;
   } catch (err) {
-    console.error("❌ Error al sincronizar Firestore:", err);
+    console.error("❌ Error al sincronizar:", err);
   } finally {
-    isSyncing = false;
+    setTimeout(() => (isSyncing = false), 800);
   }
 }
 
-// 🔹 Restaura datos desde Firestore (sin limpiar local)
+// 🔹 Restaurar datos desde Firestore al cargar
 async function restoreFromFirestore() {
   const id = getInformeId();
-  if (!id) return;
-
   try {
     const snap = await getDoc(doc(informesRef, id));
     if (snap.exists()) {
       const data = snap.data();
-      if (data.updatedAt && data.updatedAt === lastUpdateTimestamp) return;
+      if (data.timestamp && data.timestamp === lastUpdate) return;
 
       console.log("☁️ Restaurando desde Firestore:", id);
       isRestoring = true;
 
-      if (data.encabezado)
-        localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado));
-      if (data.tabla)
-        localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla));
-      if (data.corridas)
-        localStorage.setItem("corridas", JSON.stringify(data.corridas));
-      if (data.novedades)
-        localStorage.setItem("novedades_v1", JSON.stringify(data.novedades));
+      localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
+      localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
+      localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
+      localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
 
       restoreEncabezado();
       restoreTabla();
       restoreCorridas();
       loadNovedades();
-    } else {
-      console.log("⚠️ Documento no encontrado:", id);
+
+      isRestoring = false;
     }
   } catch (err) {
     console.error("❌ Error al restaurar:", err);
-  } finally {
-    isRestoring = false;
   }
 }
 
-// 🔹 Escucha remota en tiempo real
+// 🔹 Escucha en tiempo real los cambios desde Firestore
 function listenFirestore() {
   const id = getInformeId();
   onSnapshot(doc(informesRef, id), (snap) => {
-    if (!snap.exists()) return;
+    if (!snap.exists() || isSyncing) return;
     const data = snap.data();
-    if (data.updatedAt && data.updatedAt === lastUpdateTimestamp) return;
+    if (data.timestamp && data.timestamp === lastUpdate) return;
 
     console.log("🔄 Actualización remota recibida:", id);
     isRestoring = true;
 
-    if (data.encabezado)
-      localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado));
-    if (data.tabla)
-      localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla));
-    if (data.corridas)
-      localStorage.setItem("corridas", JSON.stringify(data.corridas));
-    if (data.novedades)
-      localStorage.setItem("novedades_v1", JSON.stringify(data.novedades));
+    localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
+    localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
+    localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
+    localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
 
     restoreEncabezado();
     restoreTabla();
@@ -721,25 +694,22 @@ function listenFirestore() {
   });
 }
 
-// 🔹 Inicializa restauración + escucha
+// 🔹 Activación inicial y sincronización en cada cambio
 document.addEventListener("DOMContentLoaded", async () => {
   await restoreFromFirestore();
   listenFirestore();
 });
 
-// 🔹 Sincroniza ante cualquier modificación (input/change)
 ["input", "change"].forEach(evt => {
   window.addEventListener(evt, () => {
-    if (isSyncing || isRestoring) return;
+    if (isRestoring || isSyncing) return;
     clearTimeout(window._syncTimer);
     window._syncTimer = setTimeout(syncToFirestore, 1000);
   });
 });
 
-// 🔹 Sincroniza también en botones clave
+// 🔹 Botones que también fuerzan sincronización
 ["btnInforme", "cgClear", "nvClear"].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("click", syncToFirestore);
 });
-
-console.log("✅ Firestore activo: sincroniza solo al modificar datos");
