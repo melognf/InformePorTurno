@@ -640,14 +640,22 @@ async function syncToFirestore() {
 }
 
 
-// 🔹 Restaurar datos desde Firestore al iniciar
+/* =========================
+   🔹 Restaurar desde Firestore al iniciar (AJUSTADO)
+   ========================= */
+let isRestoring = false;
+
 async function restoreFromFirestoreOnLoad() {
+  isRestoring = true;
   const id = getInformeId();
   try {
     const snap = await getDoc(doc(informesRef, id));
     if (snap.exists()) {
       const data = snap.data();
       console.log("☁️ Datos restaurados desde Firestore:", id);
+
+      // 🔹 Limpia antes de reescribir para evitar duplicados
+      localStorage.clear();
 
       localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
       localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
@@ -663,21 +671,37 @@ async function restoreFromFirestoreOnLoad() {
     }
   } catch (err) {
     console.error("❌ Error al restaurar Firestore:", err);
+  } finally {
+    isRestoring = false;
   }
 }
 
-// 🔹 Escuchar cambios en Firestore (sincronización entre dispositivos)
+document.addEventListener("DOMContentLoaded", restoreFromFirestoreOnLoad);
+
+/* =========================
+   🔹 Sincronización automática mejorada
+   ========================= */
+[ "input", "change" ].forEach(evt => {
+  window.addEventListener(evt, () => {
+    if (isRestoring || isSyncing) return; // evita sincronizar mientras restaura
+    clearTimeout(window._syncTimer);
+    window._syncTimer = setTimeout(syncToFirestore, 1500);
+  });
+});
+
+/* =========================
+   🔹 Escucha remota con protección contra duplicados
+   ========================= */
 function listenFirestore() {
   const id = getInformeId();
   onSnapshot(doc(informesRef, id), (snap) => {
-    if (!snap.exists() || isSyncing) return; // evita sobrescribir mientras se sube
+    if (!snap.exists() || isSyncing || isRestoring) return;
     const data = snap.data();
-    console.log("🔄 Actualización recibida:", id);
+    console.log("🔄 Actualización recibida desde Firestore:", id);
 
-    // Vaciar antes de restaurar (evita duplicados)
+    // 🔹 Limpieza antes de re-renderizar (evita duplicados)
     localStorage.clear();
 
-    // Reescribir localStorage desde la nube
     localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
     localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
     localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
@@ -690,26 +714,14 @@ function listenFirestore() {
   });
 }
 
-
-// 🔹 Inicializa la sincronización
 document.addEventListener("DOMContentLoaded", () => {
-  restoreFromFirestoreOnLoad();
   listenFirestore();
 
-  // Subir cambios cuando se genera informe o se borra todo
-  ["btnInforme", "cgClear", "nvClear"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("click", syncToFirestore);
-  });
+  document.getElementById("btnInforme").addEventListener("click", syncToFirestore);
+  document.getElementById("cgClear").addEventListener("click", syncToFirestore);
+  document.getElementById("nvClear").addEventListener("click", syncToFirestore);
 
-  // Sincronización automática cada 2 minutos
-  setInterval(syncToFirestore, 120000);
-
-  // Subida automática al modificar algo localmente
-  ["input", "change"].forEach(evt => {
-    window.addEventListener(evt, () => {
-      clearTimeout(window._syncTimer);
-      window._syncTimer = setTimeout(syncToFirestore, 1500);
-    });
-  });
+  setInterval(() => {
+    if (!isRestoring && !isSyncing) syncToFirestore();
+  }, 120000);
 });
