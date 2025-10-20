@@ -12,6 +12,7 @@ import {
   getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+
 // ======== Fecha / Día automático ========
 function parseDateLocal(iso) {
   if (!iso) return null;
@@ -604,16 +605,17 @@ pdf.save("informe-produccion.pdf");
 })();
 
 /* =========================
-   🔄 FIRESTORE — Sync en vivo, sin eco, auto-enganche al doc correcto
+   🔄 FIRESTORE — Sync en vivo + puntero global al informe activo
    ========================= */
 (() => {
   const informesRef = collection(db, "informes_produccion");
+  const pointerRef  = doc(collection(db, "informes_pointer"), "global"); // <- puntero único
 
   const CLIENT_ID = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
-  const SYNC = { applying:false, writing:false, lastSeen:0, unsub:null, debounce:null };
+  const SYNC = { applying:false, writing:false, lastSeen:0, unsubDoc:null, unsubPointer:null, debounce:null };
   let CURRENT_DOC_ID = null;
 
-  // ------- Helpers de docID -------
+  // ------- Helpers -------
   function makeDocId(fecha, turno) {
     const f = (fecha || "sin_fecha").trim();
     const t = (turno || "sin_turno").trim().replace(/\s+/g, "_");
@@ -630,12 +632,10 @@ pdf.save("informe-produccion.pdf");
     if (!fecha || !turno) return null;
     return makeDocId(fecha, turno);
   }
-
   function docRef(id = CURRENT_DOC_ID || currentDocIdFromInputs()) {
     if (!id) return null;
     return doc(informesRef, id);
   }
-
   function readLocalPayload() {
     return {
       encabezado: JSON.parse(localStorage.getItem("encabezado_v1") || "{}"),
@@ -644,8 +644,14 @@ pdf.save("informe-produccion.pdf");
       novedades:  JSON.parse(localStorage.getItem("novedades_v1") || "[]"),
     };
   }
+  function parseIdToHeader(id) {
+    // id es "YYYY-MM-DD_TURNO X" (con _ por espacios)
+    const [fechaGuess, ...turnoParts] = (id || "").split("_");
+    const turnoGuess = (turnoParts.join("_") || "").replace(/_/g, " ");
+    return { fechaGuess, turnoGuess };
+  }
 
-  // ------- Aplicar remoto a localStorage + DOM (sin duplicar) -------
+  // ------- Aplicar remoto a localStorage + DOM -------
   function applyRemote(data) {
     SYNC.applying = true;
     try {
@@ -662,13 +668,6 @@ pdf.save("informe-produccion.pdf");
       restoreTabla();
       restoreCorridas();
       loadNovedades();
-
-      // Si cambiaron fecha/turno por lo restaurado, me re-engancho al doc correcto
-      const idByInputs = currentDocIdFromInputs();
-      if (idByInputs && idByInputs !== CURRENT_DOC_ID) {
-        CURRENT_DOC_ID = idByInputs;
-        startLiveListener(); // re-suscribo
-      }
     } finally {
       SYNC.applying = false;
     }
@@ -678,7 +677,7 @@ pdf.save("informe-produccion.pdf");
   async function pushToFirestore() {
     if (SYNC.applying || SYNC.writing) return;
     const ref = docRef();
-    if (!ref) return; // aún no hay fecha/turno seleccionados
+    if (!ref) return; // aún no hay fecha/turno
 
     SYNC.writing = true;
     const payload = { ...readLocalPayload(), updatedAt: Date.now(), sourceId: CLIENT_ID };
@@ -692,19 +691,26 @@ pdf.save("informe-produccion.pdf");
     }
   }
 
+  // ------- Forzar escritura del puntero global -------
+  async function pushPointer(newId) {
+    if (!newId) return;
+    try {
+      await setDoc(pointerRef, { currentId: newId, updatedAt: Date.now(), sourceId: CLIENT_ID }, { merge: true });
+    } catch (e) {
+      console.error("❌ Error actualizando puntero:", e);
+    }
+  }
+
   // ------- Pull inicial del doc actual -------
   async function pullOnce(id = CURRENT_DOC_ID || currentDocIdFromInputs()) {
     const ref = id ? doc(informesRef, id) : null;
     if (!ref) return;
-
     try {
       const snap = await getDoc(ref);
       if (!snap.exists()) return;
       const data = snap.data();
-
       if (data.sourceId === CLIENT_ID) return;
       if (data.updatedAt && data.updatedAt <= SYNC.lastSeen) return;
-
       SYNC.lastSeen = data.updatedAt || Date.now();
       applyRemote(data);
     } catch (err) {
@@ -712,83 +718,149 @@ pdf.save("informe-produccion.pdf");
     }
   }
 
-  // ------- Listener en vivo (para el doc actual) -------
-  function startLiveListener() {
+  // ------- Listener en vivo del documento -------
+  function startDocListener() {
     if (!CURRENT_DOC_ID) return;
-    if (SYNC.unsub) { SYNC.unsub(); SYNC.unsub = null; }
-
+    if (SYNC.unsubDoc) { SYNC.unsubDoc(); SYNC.unsubDoc = null; }
     const ref = doc(informesRef, CURRENT_DOC_ID);
-    SYNC.unsub = onSnapshot(ref, (snap) => {
+    SYNC.unsubDoc = onSnapshot(ref, (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
       if (data.sourceId === CLIENT_ID) return;
       if (SYNC.applying || SYNC.writing) return;
       if (data.updatedAt && data.updatedAt <= SYNC.lastSeen) return;
-
       SYNC.lastSeen = data.updatedAt || Date.now();
       applyRemote(data);
     });
   }
 
-  // ------- Auto-enganche: elegir doc más reciente si no hay fecha/turno -------
-  async function ensureDocSelected() {
+  // ------- Listener del puntero global -------
+  function startPointerListener() {
+    if (SYNC.unsubPointer) { SYNC.unsubPointer(); SYNC.unsubPointer = null; }
+    SYNC.unsubPointer = onSnapshot(pointerRef, async (snap) => {
+      if (!snap.exists()) return;
+      const p = snap.data();
+      if (!p.currentId) return;
+      if (p.sourceId === CLIENT_ID) return; // yo mismo acabo de mover el puntero
+
+      // Si el puntero cambió a otro informe, me muevo
+      if (p.currentId !== CURRENT_DOC_ID) {
+        CURRENT_DOC_ID = p.currentId;
+
+        // Actualizo inputs con el id (sin disparar sync)
+        const { fechaGuess, turnoGuess } = parseIdToHeader(CURRENT_DOC_ID);
+        SYNC.applying = true;
+        try {
+          const fEl = document.getElementById("fecha");
+          const tEl = document.getElementById("turno");
+          if (fEl && fechaGuess) fEl.value = fechaGuess;
+          if (tEl && turnoGuess) tEl.value = turnoGuess;
+
+          // también refresco encabezado en localStorage
+          const enc = JSON.parse(localStorage.getItem("encabezado_v1") || "{}");
+          enc.fecha = fechaGuess || enc.fecha || "";
+          enc.turno = turnoGuess || enc.turno || "";
+          localStorage.setItem("encabezado_v1", JSON.stringify(enc));
+        } finally {
+          SYNC.applying = false;
+        }
+
+        await pullOnce(CURRENT_DOC_ID);
+        startDocListener();
+      }
+    });
+  }
+
+  // ------- Auto-enganche al iniciar -------
+  async function ensureDocSelectedAtStart() {
     const idFromInputs = currentDocIdFromInputs();
     if (idFromInputs) {
       CURRENT_DOC_ID = idFromInputs;
       await pullOnce(CURRENT_DOC_ID);
-      startLiveListener();
+      startDocListener();
+      startPointerListener();
+      // Publico puntero para que los demás sigan este informe
+      pushPointer(CURRENT_DOC_ID);
       return;
     }
 
+    // Si no hay fecha/turno local, intento seguir el puntero global
+    try {
+      const snap = await getDoc(pointerRef);
+      if (snap.exists() && snap.data().currentId) {
+        CURRENT_DOC_ID = snap.data().currentId;
+
+        // Pinto inputs con el puntero (sin disparar sync)
+        const { fechaGuess, turnoGuess } = parseIdToHeader(CURRENT_DOC_ID);
+        SYNC.applying = true;
+        try {
+          if (document.getElementById("fecha") && fechaGuess) document.getElementById("fecha").value = fechaGuess;
+          if (document.getElementById("turno") && turnoGuess) document.getElementById("turno").value = turnoGuess;
+
+          const enc = JSON.parse(localStorage.getItem("encabezado_v1") || "{}");
+          enc.fecha = fechaGuess || enc.fecha || "";
+          enc.turno = turnoGuess || enc.turno || "";
+          localStorage.setItem("encabezado_v1", JSON.stringify(enc));
+        } finally {
+          SYNC.applying = false;
+        }
+
+        await pullOnce(CURRENT_DOC_ID);
+        startDocListener();
+        startPointerListener();
+        return;
+      }
+    } catch {}
+
+    // Si no hay puntero, caigo al último informe por updatedAt
     try {
       const q = query(informesRef, orderBy("updatedAt", "desc"), limit(1));
       const qs = await getDocs(q);
-      if (qs.empty) return; // no hay informes aún
-
-      const top = qs.docs[0];
-      CURRENT_DOC_ID = top.id;
-
-      // Relleno encabezado en UI SIN disparar sync
-      SYNC.applying = true;
-      try {
-        const [fechaGuess, ...turnoParts] = top.id.split("_");
-        const turnoGuess = (turnoParts.join("_") || "").replace(/_/g, " ");
-        if (fechaGuess) document.getElementById("fecha").value = fechaGuess;
-        if (turnoGuess) document.getElementById("turno").value = turnoGuess;
-        // guardo encabezado para tu app
-        localStorage.setItem("encabezado_v1", JSON.stringify({
-          fecha: fechaGuess || "",
-          turno: turnoGuess || "",
-          tn: document.getElementById("tn")?.value || "",
-          dia: document.getElementById("dia")?.value || ""
-        }));
-      } finally {
-        SYNC.applying = false;
+      if (!qs.empty) {
+        CURRENT_DOC_ID = qs.docs[0].id;
+        const { fechaGuess, turnoGuess } = parseIdToHeader(CURRENT_DOC_ID);
+        SYNC.applying = true;
+        try {
+          if (document.getElementById("fecha") && fechaGuess) document.getElementById("fecha").value = fechaGuess;
+          if (document.getElementById("turno") && turnoGuess) document.getElementById("turno").value = turnoGuess;
+          const enc = JSON.parse(localStorage.getItem("encabezado_v1") || "{}");
+          enc.fecha = fechaGuess || enc.fecha || "";
+          enc.turno = turnoGuess || enc.turno || "";
+          localStorage.setItem("encabezado_v1", JSON.stringify(enc));
+        } finally {
+          SYNC.applying = false;
+        }
+        await pullOnce(CURRENT_DOC_ID);
+        startDocListener();
+        startPointerListener();
+        // y fijo puntero para todos
+        pushPointer(CURRENT_DOC_ID);
+      } else {
+        // nada que escuchar aún, pero arranco pointer listener
+        startPointerListener();
       }
-
-      // Aplico el contenido remoto al DOM
-      await pullOnce(CURRENT_DOC_ID);
-      startLiveListener();
     } catch (err) {
-      console.error("❌ Error obteniendo último informe:", err);
+      console.error("❌ Error auto-seleccionando informe:", err);
+      startPointerListener();
     }
   }
 
   // ======== Arranque ========
-  document.addEventListener("DOMContentLoaded", ensureDocSelected);
+  document.addEventListener("DOMContentLoaded", ensureDocSelectedAtStart);
 
-  // ======== Re-suscribir si cambia fecha o turno ========
+  // ======== Si cambia fecha/turno local: re-suscribo y publico puntero ========
   ["fecha", "turno"].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("change", async () => {
       if (SYNC.applying) return; // cambio programático
       const newId = currentDocIdFromInputs();
-      if (!newId) return;
+      if (!newId || newId === CURRENT_DOC_ID) return;
       CURRENT_DOC_ID = newId;
       await pullOnce(CURRENT_DOC_ID);
-      startLiveListener();
-      // subida de mi estado (por si moví el puntero a otro doc)
+      startDocListener();
+      pushPointer(CURRENT_DOC_ID); // <- todos los demás se mueven a este doc
+      // subo mis datos
       setTimeout(pushToFirestore, 80);
     });
   });
