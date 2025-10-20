@@ -236,11 +236,12 @@ form.addEventListener('submit', e => {
   }
 
   // === Si pasa la validación, agregar la barra ===
-  cgAddBar(linea, ini, fin, sabor);
-  form.reset();
-  setTimeout(() => {
-    if (typeof syncToFirestore === "function") syncToFirestore();
-  }, 50);
+  // === Si pasa la validación, agregar la barra ===
+cgAddBar(linea, ini, fin, sabor);
+form.reset();
+// 🔔 subo YA la nueva corrida
+if (window.syncNow) window.syncNow();
+
 });
 
 // === NOVEDADES ===
@@ -282,6 +283,7 @@ function loadNovedades() {
   const saved = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
   saved.forEach(nv => addNovedad(nv.linea, nv.hora, nv.texto, true));
 }
+if (window.syncNow) window.syncNow();
 
 // === Borrar todas ===
 function clearNovedades() {
@@ -322,10 +324,15 @@ formNovedad.addEventListener("submit", e => {
   loadNovedades();
 });
 
-nvClear.addEventListener("click", clearNovedades);
-document.addEventListener("DOMContentLoaded", loadNovedades);
+nvClear.addEventListener("click", () => { 
+  clearNovedades(); 
+  if (window.syncNow) window.syncNow();
+});
 
-cgClearBtn.addEventListener('click', cgClear);
+cgClearBtn.addEventListener('click', () => {
+  cgClear();
+  if (window.syncNow) window.syncNow();
+});
 
 function toggleBotoneras(visible) {
   const secciones = document.querySelectorAll(
@@ -883,4 +890,31 @@ pdf.save("informe-produccion.pdf");
     const el = document.getElementById(id);
     if (el) el.addEventListener("click", () => setTimeout(pushToFirestore, 60));
   });
+    // --- Exponer un sync inmediato para usar desde cualquier lugar ---
+  window.syncNow = () => {
+    // dispara una subida inmediata y segura
+    setTimeout(() => {
+      if (!SYNC.applying && !SYNC.writing) {
+        // misma función que ya usás internamente
+        // (no la marcamos global para no ensuciar el scope)
+        // simplemente reusamos pushToFirestore
+        (async () => {
+          const ref = docRef();
+          if (!ref) return;
+          SYNC.writing = true;
+          const payload = { ...readLocalPayload(), updatedAt: Date.now(), sourceId: CLIENT_ID };
+          try {
+            await setDoc(ref, payload, { merge: true });
+            SYNC.lastSeen = payload.updatedAt;
+          } catch (err) {
+            console.error("❌ Error al sincronizar:", err);
+          } finally {
+            SYNC.writing = false;
+          }
+        })();
+      }
+    }, 0);
+  };
+
+
 })();
