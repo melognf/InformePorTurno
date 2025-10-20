@@ -600,94 +600,104 @@ pdf.save("informe-produccion.pdf");
 })();
 
 /* =========================
-   🔄 FIRESTORE — Sin duplicados ni pérdida al refrescar
+   🔄 FIRESTORE — En vivo, sin duplicados ni pérdida
    ========================= */
-let isSyncing = false;
+import { db } from "./firebase-config.js";
+import {
+  collection, doc, setDoc, getDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+let isSyncing   = false;
 let isRestoring = false;
-let lastRemote = null;
+let lastRemote  = 0;
+const clientId  = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 
 const informesRef = collection(db, "informes_produccion");
+let unsubscribe = null; // para cambiar de doc al cambiar fecha/turno
 
-// 🔹 Genera ID único
+// ID = fecha_turno
 function getInformeId() {
-  const fecha = document.getElementById("fecha")?.value || "sin_fecha";
-  const turno = document.getElementById("turno")?.value || "sin_turno";
-  return `${fecha}_${turno}`.replace(/\s+/g, "_");
+  const f = document.getElementById("fecha")?.value || "sin_fecha";
+  const t = document.getElementById("turno")?.value || "sin_turno";
+  return `${f}_${t}`.replace(/\s+/g, "_");
 }
+function currentDocRef() { return doc(informesRef, getInformeId()); }
 
-// 🔹 Subir al servidor
+// Sube el estado local a Firestore
 async function syncToFirestore() {
   if (isSyncing || isRestoring) return;
   isSyncing = true;
 
-  const id = getInformeId();
   const payload = {
     encabezado: JSON.parse(localStorage.getItem("encabezado_v1") || "{}"),
-    tabla: JSON.parse(localStorage.getItem("tabla_produccion_v1") || "[]"),
-    corridas: JSON.parse(localStorage.getItem("corridas") || "[]"),
-    novedades: JSON.parse(localStorage.getItem("novedades_v1") || "[]"),
-    updatedAt: Date.now()
+    tabla:      JSON.parse(localStorage.getItem("tabla_produccion_v1") || "[]"),
+    corridas:   JSON.parse(localStorage.getItem("corridas") || "[]"),
+    novedades:  JSON.parse(localStorage.getItem("novedades_v1") || "[]"),
+    updatedAt:  Date.now(),
+    sourceId:   clientId,
   };
 
   try {
-    await setDoc(doc(informesRef, id), payload, { merge: true });
-    console.log("📤 Datos subidos a Firestore:", id);
+    await setDoc(currentDocRef(), payload, { merge: true });
     lastRemote = payload.updatedAt;
-  } catch (err) {
-    console.error("❌ Error al sincronizar:", err);
+    // console.log("📤 Sync OK", getInformeId());
+  } catch (e) {
+    console.error("❌ Sync error:", e);
   } finally {
     isSyncing = false;
   }
 }
 
-// 🔹 Cargar desde Firestore (sin limpiar localStorage)
+// Trae estado del doc actual y repinta (sin limpiar localStorage a lo bestia)
 async function restoreFromFirestore() {
-  const id = getInformeId();
-  try {
-    const snap = await getDoc(doc(informesRef, id));
-    if (!snap.exists()) return;
+  const snap = await getDoc(currentDocRef());
+  if (!snap.exists()) return;
 
-    const data = snap.data();
-    if (data.updatedAt && data.updatedAt === lastRemote) return;
+  const data = snap.data();
+  if (data.sourceId === clientId) return;                // me ignoro a mí mismo
+  if (data.updatedAt && data.updatedAt <= lastRemote) return;
 
-    console.log("☁️ Restaurando desde Firestore:", id);
-    isRestoring = true;
+  isRestoring = true;
+  lastRemote  = data.updatedAt || Date.now();
 
-    localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
-    localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
-    localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
-    localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
+  // Persisto local y repinto limpio
+  localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
+  localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
+  localStorage.setItem("corridas",          JSON.stringify(data.corridas || []));
+  localStorage.setItem("novedades_v1",      JSON.stringify(data.novedades || []));
 
-    // 🧽 Limpiar DOM antes de repintar
-    document.querySelectorAll(".cg-lane").forEach(l => l.innerHTML = "");
-    document.querySelectorAll(".linea-card ul").forEach(u => u.innerHTML = "");
+  // Limpieza de DOM antes de render (evita duplicados)
+  document.querySelectorAll(".cg-lane").forEach(l => l.innerHTML = "");
+  document.querySelectorAll(".linea-card ul").forEach(u => u.innerHTML = "");
 
-    restoreEncabezado();
-    restoreTabla();
-    restoreCorridas();
-    loadNovedades();
+  restoreEncabezado();
+  restoreTabla();
+  restoreCorridas();
+  loadNovedades();
 
-    isRestoring = false;
-  } catch (err) {
-    console.error("❌ Error al restaurar:", err);
-  }
+  isRestoring = false;
 }
 
-// 🔹 Escucha remota (actualización en vivo)
-function listenFirestore() {
-  const id = getInformeId();
-  onSnapshot(doc(informesRef, id), (snap) => {
-    if (!snap.exists() || isSyncing) return;
+// Suscripción en vivo al doc actual (y la renuevo cuando cambia fecha/turno)
+function startLiveListener() {
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  unsubscribe = onSnapshot(currentDocRef(), (snap) => {
+    if (!snap.exists()) return;
     const data = snap.data();
-    if (data.updatedAt && data.updatedAt === lastRemote) return;
 
-    console.log("🔄 Actualización remota detectada:", id);
+    // Evitar eco propio y repintados innecesarios
+    if (data.sourceId === clientId) return;
+    if (isSyncing || isRestoring)   return;
+    if (data.updatedAt && data.updatedAt <= lastRemote) return;
+
+    // Actualizar y repintar
     isRestoring = true;
+    lastRemote  = data.updatedAt || Date.now();
 
     localStorage.setItem("encabezado_v1", JSON.stringify(data.encabezado || {}));
     localStorage.setItem("tabla_produccion_v1", JSON.stringify(data.tabla || []));
-    localStorage.setItem("corridas", JSON.stringify(data.corridas || []));
-    localStorage.setItem("novedades_v1", JSON.stringify(data.novedades || []));
+    localStorage.setItem("corridas",          JSON.stringify(data.corridas || []));
+    localStorage.setItem("novedades_v1",      JSON.stringify(data.novedades || []));
 
     document.querySelectorAll(".cg-lane").forEach(l => l.innerHTML = "");
     document.querySelectorAll(".linea-card ul").forEach(u => u.innerHTML = "");
@@ -701,23 +711,37 @@ function listenFirestore() {
   });
 }
 
-// 🔹 Inicia restauración + escucha
+// Arranque: restauro y escucho
 document.addEventListener("DOMContentLoaded", async () => {
   await restoreFromFirestore();
-  listenFirestore();
+  startLiveListener();
 });
 
-// 🔹 Sincroniza ante cualquier cambio local
-["input", "change"].forEach(evt => {
+// Re-suscribo cuando cambian “fecha” o “turno” (cambia el doc)
+["fecha", "turno"].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("change", async () => {
+    // creo/actualizo el nuevo doc con lo que hay local y escucho ese doc
+    await syncToFirestore();
+    await restoreFromFirestore();
+    startLiveListener();
+  });
+});
+
+// Sincroniza ante cualquier cambio local (toda la app)
+["input","change"].forEach(evt => {
   window.addEventListener(evt, () => {
     if (isRestoring || isSyncing) return;
     clearTimeout(window._syncTimer);
-    window._syncTimer = setTimeout(syncToFirestore, 1200);
+    window._syncTimer = setTimeout(syncToFirestore, 800);
   });
 });
 
-// 🔹 Botones que fuerzan sincronización
-["btnInforme", "cgClear", "nvClear"].forEach(id => {
+// Fuerzo sync en botones “grandes”
+["btnInforme","cgClear","nvClear"].forEach(id => {
   const el = document.getElementById(id);
-  if (el) el.addEventListener("click", syncToFirestore);
+  if (el) el.addEventListener("click", () => {
+    setTimeout(syncToFirestore, 50);
+  });
 });
