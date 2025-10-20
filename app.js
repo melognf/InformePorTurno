@@ -5,7 +5,11 @@ import {
   doc,
   setDoc,
   getDoc,
-  onSnapshot
+  onSnapshot,
+  query,
+  orderBy,
+  limit,
+  getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ======== Fecha / Día automático ========
@@ -600,37 +604,38 @@ pdf.save("informe-produccion.pdf");
 })();
 
 /* =========================
-   🔄 FIRESTORE — Sync en vivo sin duplicados (drop-in)
+   🔄 FIRESTORE — Sync en vivo, sin eco, auto-enganche al doc correcto
    ========================= */
 (() => {
-  // Usa tus imports ya cargados arriba: db, collection, doc, setDoc, getDoc, onSnapshot
-  // No tocamos nada de tu UI ni del modo lectura/carga.
-
   const informesRef = collection(db, "informes_produccion");
 
-  // Identificador de este cliente para evitar “eco”
   const CLIENT_ID = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+  const SYNC = { applying:false, writing:false, lastSeen:0, unsub:null, debounce:null };
+  let CURRENT_DOC_ID = null;
 
-  // Estado interno aislado (no colisiona con nada tuyo)
-  const SYNC = {
-    applying: false,     // estamos aplicando estado remoto al DOM
-    writing:  false,     // estamos escribiendo a Firestore
-    lastSeen:  0,        // timestamp del último cambio aplicado
-    unsub:     null,     // función para desuscribir snapshot
-    debounce:  null
-  };
-
-  // ID de documento = fecha_turno (solo lectura del DOM)
-  function getCurrentDocId() {
-    const fecha = document.getElementById("fecha")?.value || "sin_fecha";
-    const turno = document.getElementById("turno")?.value || "sin_turno";
-    return `${fecha}_${turno}`.replace(/\s+/g, "_");
+  // ------- Helpers de docID -------
+  function makeDocId(fecha, turno) {
+    const f = (fecha || "sin_fecha").trim();
+    const t = (turno || "sin_turno").trim().replace(/\s+/g, "_");
+    return `${f}_${t}`;
   }
-  function currentDocRef() {
-    return doc(informesRef, getCurrentDocId());
+  function readHeader() {
+    return {
+      fecha: document.getElementById("fecha")?.value || "",
+      turno: document.getElementById("turno")?.value || ""
+    };
+  }
+  function currentDocIdFromInputs() {
+    const { fecha, turno } = readHeader();
+    if (!fecha || !turno) return null;
+    return makeDocId(fecha, turno);
   }
 
-  // Leer estado local para subir
+  function docRef(id = CURRENT_DOC_ID || currentDocIdFromInputs()) {
+    if (!id) return null;
+    return doc(informesRef, id);
+  }
+
   function readLocalPayload() {
     return {
       encabezado: JSON.parse(localStorage.getItem("encabezado_v1") || "{}"),
@@ -640,7 +645,7 @@ pdf.save("informe-produccion.pdf");
     };
   }
 
-  // Aplicar un snapshot remoto al localStorage + DOM (sin duplicar)
+  // ------- Aplicar remoto a localStorage + DOM (sin duplicar) -------
   function applyRemote(data) {
     SYNC.applying = true;
     try {
@@ -649,7 +654,7 @@ pdf.save("informe-produccion.pdf");
       localStorage.setItem("corridas",            JSON.stringify(data.corridas || []));
       localStorage.setItem("novedades_v1",        JSON.stringify(data.novedades || []));
 
-      // Limpio contenedores visuales y repinto usando tus funciones
+      // Limpio y repinto con tus funciones
       document.querySelectorAll(".cg-lane").forEach(l => (l.innerHTML = ""));
       document.querySelectorAll(".linea-card ul").forEach(u => (u.innerHTML = ""));
 
@@ -657,26 +662,29 @@ pdf.save("informe-produccion.pdf");
       restoreTabla();
       restoreCorridas();
       loadNovedades();
+
+      // Si cambiaron fecha/turno por lo restaurado, me re-engancho al doc correcto
+      const idByInputs = currentDocIdFromInputs();
+      if (idByInputs && idByInputs !== CURRENT_DOC_ID) {
+        CURRENT_DOC_ID = idByInputs;
+        startLiveListener(); // re-suscribo
+      }
     } finally {
       SYNC.applying = false;
     }
   }
 
-  // Subir cambios locales (debounced)
+  // ------- Subir cambios locales (debounced) -------
   async function pushToFirestore() {
     if (SYNC.applying || SYNC.writing) return;
+    const ref = docRef();
+    if (!ref) return; // aún no hay fecha/turno seleccionados
+
     SYNC.writing = true;
-
-    const payload = {
-      ...readLocalPayload(),
-      updatedAt: Date.now(),
-      sourceId:  CLIENT_ID
-    };
-
+    const payload = { ...readLocalPayload(), updatedAt: Date.now(), sourceId: CLIENT_ID };
     try {
-      await setDoc(currentDocRef(), payload, { merge: true });
-      SYNC.lastSeen = payload.updatedAt; // recordamos nuestra última escritura
-      // console.log("📤 Sync → Firestore");
+      await setDoc(ref, payload, { merge: true });
+      SYNC.lastSeen = payload.updatedAt;
     } catch (err) {
       console.error("❌ Error al sincronizar:", err);
     } finally {
@@ -684,65 +692,108 @@ pdf.save("informe-produccion.pdf");
     }
   }
 
-  // Carga inicial desde Firestore (si existe)
-  async function pullOnce() {
-    try {
-      const snap = await getDoc(currentDocRef());
-      if (!snap.exists()) return;
+  // ------- Pull inicial del doc actual -------
+  async function pullOnce(id = CURRENT_DOC_ID || currentDocIdFromInputs()) {
+    const ref = id ? doc(informesRef, id) : null;
+    if (!ref) return;
 
+    try {
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
       const data = snap.data();
 
-      // Evitar eco propio y versiones viejas
       if (data.sourceId === CLIENT_ID) return;
       if (data.updatedAt && data.updatedAt <= SYNC.lastSeen) return;
 
       SYNC.lastSeen = data.updatedAt || Date.now();
       applyRemote(data);
-      // console.log("☁️ Pull inicial desde Firestore");
     } catch (err) {
       console.error("❌ Error al restaurar:", err);
     }
   }
 
-  // Escucha en vivo para el doc actual
+  // ------- Listener en vivo (para el doc actual) -------
   function startLiveListener() {
-    // Cambio de doc (por cambio de fecha/turno)
+    if (!CURRENT_DOC_ID) return;
     if (SYNC.unsub) { SYNC.unsub(); SYNC.unsub = null; }
 
-    SYNC.unsub = onSnapshot(currentDocRef(), (snap) => {
+    const ref = doc(informesRef, CURRENT_DOC_ID);
+    SYNC.unsub = onSnapshot(ref, (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
-
-      // Ignoro mi propio cambio o si estoy aplicando/escribiendo/basado en versión vieja
       if (data.sourceId === CLIENT_ID) return;
       if (SYNC.applying || SYNC.writing) return;
       if (data.updatedAt && data.updatedAt <= SYNC.lastSeen) return;
 
       SYNC.lastSeen = data.updatedAt || Date.now();
       applyRemote(data);
-      // console.log("🔄 Update en vivo desde Firestore");
     });
   }
 
-  // === Arranque: pull inicial + listener
-  document.addEventListener("DOMContentLoaded", async () => {
-    await pullOnce();
-    startLiveListener();
-  });
+  // ------- Auto-enganche: elegir doc más reciente si no hay fecha/turno -------
+  async function ensureDocSelected() {
+    const idFromInputs = currentDocIdFromInputs();
+    if (idFromInputs) {
+      CURRENT_DOC_ID = idFromInputs;
+      await pullOnce(CURRENT_DOC_ID);
+      startLiveListener();
+      return;
+    }
 
-  // === Re-suscribir si cambia fecha o turno (nuevo doc)
+    try {
+      const q = query(informesRef, orderBy("updatedAt", "desc"), limit(1));
+      const qs = await getDocs(q);
+      if (qs.empty) return; // no hay informes aún
+
+      const top = qs.docs[0];
+      CURRENT_DOC_ID = top.id;
+
+      // Relleno encabezado en UI SIN disparar sync
+      SYNC.applying = true;
+      try {
+        const [fechaGuess, ...turnoParts] = top.id.split("_");
+        const turnoGuess = (turnoParts.join("_") || "").replace(/_/g, " ");
+        if (fechaGuess) document.getElementById("fecha").value = fechaGuess;
+        if (turnoGuess) document.getElementById("turno").value = turnoGuess;
+        // guardo encabezado para tu app
+        localStorage.setItem("encabezado_v1", JSON.stringify({
+          fecha: fechaGuess || "",
+          turno: turnoGuess || "",
+          tn: document.getElementById("tn")?.value || "",
+          dia: document.getElementById("dia")?.value || ""
+        }));
+      } finally {
+        SYNC.applying = false;
+      }
+
+      // Aplico el contenido remoto al DOM
+      await pullOnce(CURRENT_DOC_ID);
+      startLiveListener();
+    } catch (err) {
+      console.error("❌ Error obteniendo último informe:", err);
+    }
+  }
+
+  // ======== Arranque ========
+  document.addEventListener("DOMContentLoaded", ensureDocSelected);
+
+  // ======== Re-suscribir si cambia fecha o turno ========
   ["fecha", "turno"].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("change", async () => {
-      // Subo mi estado actual al doc nuevo para no “perder” datos locales
-      await pushToFirestore();
-      await pullOnce();
+      if (SYNC.applying) return; // cambio programático
+      const newId = currentDocIdFromInputs();
+      if (!newId) return;
+      CURRENT_DOC_ID = newId;
+      await pullOnce(CURRENT_DOC_ID);
       startLiveListener();
+      // subida de mi estado (por si moví el puntero a otro doc)
+      setTimeout(pushToFirestore, 80);
     });
   });
 
-  // === Dispara sync en cualquier cambio local (debounce suave)
+  // ======== Disparar sync en cambios locales (debounced) ========
   ["input", "change"].forEach(evt => {
     window.addEventListener(evt, () => {
       if (SYNC.applying || SYNC.writing) return;
@@ -751,7 +802,7 @@ pdf.save("informe-produccion.pdf");
     });
   });
 
-  // === Algunos botones fuerzan sync explícito luego del click
+  // ======== Botones que fuerzan sync ========
   ["btnInforme", "cgClear", "nvClear"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("click", () => setTimeout(pushToFirestore, 60));
