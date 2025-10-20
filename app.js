@@ -238,6 +238,9 @@ form.addEventListener('submit', e => {
   // === Si pasa la validación, agregar la barra ===
   cgAddBar(linea, ini, fin, sabor);
   form.reset();
+  setTimeout(() => {
+    if (typeof syncToFirestore === "function") syncToFirestore();
+  }, 50);
 });
 
 // === NOVEDADES ===
@@ -666,6 +669,7 @@ pdf.save("informe-produccion.pdf");
 
       restoreEncabezado();
       restoreTabla();
+      if (typeof cgBuildAxis === "function") cgBuildAxis();
       restoreCorridas();
       loadNovedades();
     } finally {
