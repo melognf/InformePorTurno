@@ -716,3 +716,115 @@ input[type="date"]:focus {
     color: #000;
   }
 }
+.formatos-acciones{
+  margin: 10px 0 4px;
+  display: flex;
+  gap: 10px;
+}
+
+#btnEditarFormatos, #btnGrabarFormatos{
+  background: #e10600;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#btnEditarFormatos{ background: #3e3e3e; }
+#btnEditarFormatos:hover{ background:#2d2d2d; }
+#btnGrabarFormatos:hover{ background:#c50500; }
+
+/* ===== Botón MODO (visibilidad + clics) ===== */
+.mode-btn-header{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.35rem .6rem;
+  border-radius:.75rem;
+  background:#2b2b2b;     /* tu fondo oscuro */
+  color:#fff;             /* texto visible */
+  border:1px solid #444;
+  cursor:pointer;
+  user-select:none;
+  position:relative;
+  z-index:20;             /* por si algo lo tapa */
+  pointer-events:auto;
+}
+.logo-encabezado{
+  display: flex;
+  align-items: center;
+  gap: 8px;            /* espacio entre botón e imagen */
+}
+
+
+
+
+.mode-btn-header .mode-icon::before{
+  content:"🔓";           /* icono por defecto: carga */
+  display:inline-block;
+  line-height:1;
+}
+.mode-btn-header.is-lectura .mode-icon::before{
+  content:"🔒";           /* lectura */
+}
+
+/* si algún CSS previo escondía el label, lo pisamos */
+.mode-btn-header .mode-label,
+.mode-btn-header .mode-icon{
+  visibility:visible !important;
+  opacity:1 !important;
+}
+
+.tabla-produccion td[contenteditable="false"]{
+  background: #efefef;
+  cursor: default;
+}
+
+/* Botón de cierre dentro de cada barra */
+.cg-bar {
+  position: relative;
+  padding-left: 26px; /* lugar para la x */
+}
+.cg-bar .cg-bar-close{
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,.6);
+  background: rgba(0,0,0,.35);
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+.cg-bar .cg-bar-close:hover{ background: rgba(0,0,0,.55); }
+.cg-bar .cg-bar-close.is-hidden{ display:none; }
+
+.mode-btn-header{
+  white-space: nowrap;     /* no partir el texto */
+  flex-shrink: 0;          /* que no se achique dentro del flex */
+  max-width: none;         /* por si algún estilo lo limita */
+}
+
+.mode-btn-header .mode-label{
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.linea-card li b { margin-right: 6px; }
+
+.linea-card li { display:flex; align-items:center; gap:6px; }
+.nv-del{
+  margin-left:auto; border:0; background:#e10600; color:#fff;
+  width:24px; height:24px; border-radius:6px; cursor:pointer;
+  font-weight:700; line-height:24px;
+}
+.nv-del:hover{ opacity:.9; }

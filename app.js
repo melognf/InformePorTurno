@@ -80,55 +80,91 @@ function cgBuildAxis() {
 
 
 // ======== Agrega una barra ========
-// ======== Agrega una barra ========
+// ¿Estoy en modo lectura?
+function isLectura() {
+  const btn = document.getElementById("modeBtn");
+  return !!btn && btn.classList.contains("is-lectura");
+}
+
+// Mostrar/ocultar botoncitos "x" según el modo
+function updateBarDeleteVisibility(show) {
+  document.querySelectorAll(".cg-bar .cg-bar-close").forEach(btn => {
+    btn.classList.toggle("is-hidden", !show);
+  });
+}
+
+// Remueve una corrida del storage (por coincidencia exacta)
+function removeCorrida(linea, inicio, fin, sabor) {
+  const saved = JSON.parse(localStorage.getItem("corridas") || "[]");
+  const next  = saved.filter(c => !(c.linea==linea && c.inicio==inicio && c.fin==fin && c.sabor==sabor));
+  localStorage.setItem("corridas", JSON.stringify(next));
+  if (window.syncNow) window.syncNow();
+}
+
+
 function cgAddBar(linea, inicio, fin, sabor, restored = false) {
   const lane = document.querySelector(`.cg-lane[data-linea="${linea}"]`);
   if (!lane) return;
 
   const rangeText = `${inicio}|${fin}`;
   const dupe = Array.from(lane.children).find(
-    b => b.dataset.timeRange === rangeText && b.textContent === sabor
+    b => b.dataset.timeRange === rangeText && b.textContent.replace(/^\s*×\s*/,'') === sabor
   );
   if (dupe) dupe.remove();
 
-  // --- cálculos con precisión de minutos ---
+  // --- cálculos ---
   const [iniH, iniM] = inicio.split(":").map(Number);
   const [finH, finM] = fin.split(":").map(Number);
-
   const iniTotal = iniH * 60 + iniM;
   const finTotal = finH * 60 + finM;
-  const totalHoras = 12 * 60; // rango de 12h en minutos
-
-  // punto de inicio del rango según selector
+  const totalHoras = 12 * 60;
   const startRange = window.cgStartHour * 60;
-  const endRange = (startRange + totalHoras) % (24 * 60);
 
   let startMin, endMin;
-
-  if (startRange < endRange) {
+  if ((startRange + totalHoras) % (24*60) > startRange) {
     startMin = Math.max(0, iniTotal - startRange);
     endMin   = Math.min(totalHoras, finTotal - startRange);
   } else {
-    // caso 18→06 (cruza medianoche)
-    startMin = (iniTotal >= startRange) ? iniTotal - startRange : (24 * 60 - startRange) + iniTotal;
-    endMin   = (finTotal >= startRange) ? finTotal - startRange : (24 * 60 - startRange) + finTotal;
+    startMin = (iniTotal >= startRange) ? iniTotal - startRange : (24*60 - startRange) + iniTotal;
+    endMin   = (finTotal >= startRange) ? finTotal - startRange : (24*60 - startRange) + finTotal;
   }
-
   const startPercent = (startMin / totalHoras) * 100;
   const widthPercent = Math.max(1, ((endMin - startMin) / totalHoras) * 100);
 
-  // --- offset y render ---
   const existingBars = lane.querySelectorAll(".cg-bar").length;
   const offsetY = 8 + existingBars * 28;
 
   const bar = document.createElement("div");
   bar.className = "cg-bar";
-  bar.textContent = sabor;
   bar.dataset.timeRange = rangeText;
+  bar.dataset.linea = String(linea);
+  bar.dataset.sabor = sabor;
   bar.style.left = `${startPercent}%`;
   bar.style.width = `${widthPercent}%`;
   bar.style.top = `${offsetY}px`;
   bar.dataset.restored = restored ? "true" : "false";
+
+  // botón "x"
+  const x = document.createElement("button");
+  x.type = "button";
+  x.className = "cg-bar-close";
+  x.textContent = "×";
+  if (isLectura()) x.classList.add("is-hidden");
+  x.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const l = bar.dataset.linea;
+    const [ini, fin] = bar.dataset.timeRange.split("|");
+    const sab = bar.dataset.sabor;
+    bar.remove();
+    // recalcular altura del carril
+    const left = lane.querySelectorAll(".cg-bar").length;
+    lane.style.height = `${Math.max(40, 40 + (left-1) * 28)}px`;
+    removeCorrida(l, ini, fin, sab);
+  });
+
+  bar.appendChild(x);
+  // el texto de la barra después del botón
+  bar.appendChild(document.createTextNode(sabor));
 
   lane.appendChild(bar);
   lane.style.height = `${40 + existingBars * 28}px`;
@@ -137,8 +173,10 @@ function cgAddBar(linea, inicio, fin, sabor, restored = false) {
     const saved = JSON.parse(localStorage.getItem("corridas") || "[]");
     saved.push({ linea, inicio, fin, sabor });
     localStorage.setItem("corridas", JSON.stringify(saved));
+    if (window.syncNow) window.syncNow();
   }
 }
+
 
 // ======== Limpia todo ========
 function cgClear() {
@@ -170,7 +208,9 @@ function restoreCorridas() {
   document.querySelectorAll('.cg-lane').forEach(l => l.innerHTML='');
   const saved = JSON.parse(localStorage.getItem("corridas") || "[]");
   saved.forEach(c => cgAddBar(c.linea, c.inicio, c.fin, c.sabor, true));
+  updateBarDeleteVisibility(!isLectura()); // asegura visibilidad correcta
 }
+
 
 
 // ======== Inicializa ========
@@ -253,36 +293,314 @@ const nvHora = document.getElementById("nvHora");
 const nvTexto = document.getElementById("nvTexto");
 const nvClear = document.getElementById("nvClear");
 
-// === Agregar novedad ===
-function addNovedad(linea, hora, texto, restored = false) {
-  const cards = document.querySelectorAll(".linea-card");
-  const card = Array.from(cards).find(c => 
-    c.querySelector("h3").textContent.trim() === linea
-  );
-  if (!card) return;
+/* === Horas en punto (alta de novedades) — SELECT con opciones === */
 
-  const ul = card.querySelector("ul");
-  const li = document.createElement("li");
-  li.innerHTML = `<b>${hora}:</b> ${texto}`;
-  ul.appendChild(li);
+// Si #nvHora no es <select>, lo convertimos manteniendo id y required
+(function ensureNvHoraSelect(){
+  const el = document.getElementById("nvHora");
+  if (!el) return;
+  if (el.tagName.toLowerCase() === "select") return; // ya es select
+  const sel = document.createElement("select");
+  sel.id = el.id;
+  if (el.hasAttribute("required")) sel.setAttribute("required", "");
+  el.parentNode.replaceChild(sel, el);
+})();
 
-  if (!restored) {
-    const saved = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
-    saved.push({ linea, hora, texto });
-    // 🔹 Ordenar por línea y hora antes de guardar
-    saved.sort((a, b) => {
-      if (a.linea !== b.linea) return a.linea.localeCompare(b.linea);
-      return a.hora.localeCompare(b.hora);
-    });
-    localStorage.setItem(FORM_KEY, JSON.stringify(saved));
+function buildNvHoraOptions(){
+  const sel = document.getElementById("nvHora");
+  const rangoSel = document.getElementById("cgRango");
+  if (!sel || !rangoSel) return;
+
+  const rango = rangoSel.value;
+  const opts = [];
+  if (rango === "06-18"){
+    for (let h=6; h<18; h++){
+      const v = String(h).padStart(2,"0") + ":00";
+      opts.push(`<option value="${v}">${v}</option>`);
+    }
+  } else {
+    for (let h=18; h<=23; h++){
+      const v = String(h).padStart(2,"0") + ":00";
+      opts.push(`<option value="${v}">${v}</option>`);
+    }
+    for (let h=0; h<=6; h++){
+      const v = String(h).padStart(2,"0") + ":00";
+      opts.push(`<option value="${v}">${v}</option>`);
+    }
   }
+
+  const prev = sel.value;
+  sel.innerHTML = opts.join("");
+  const still = Array.from(sel.options).some(o => o.value === prev);
+  sel.value = still ? prev : (sel.options[0]?.value || "");
 }
 
-// === Cargar novedades guardadas ===
-function loadNovedades() {
-  const saved = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
-  saved.forEach(nv => addNovedad(nv.linea, nv.hora, nv.texto, true));
+// construir al cargar y cuando cambia la franja
+document.addEventListener("DOMContentLoaded", () => {
+  buildNvHoraOptions();
+  renderNovedades?.();   // pinta lo guardado si lo tenés
+});
+document.getElementById("cgRango")?.addEventListener("change", buildNvHoraOptions);
+
+
+// Construir al cargar y cuando cambia la franja
+document.addEventListener("DOMContentLoaded", buildNvHoraOptions);
+document.getElementById("cgRango")?.addEventListener("change", buildNvHoraOptions);
+
+
+
+// ======== EDITAR NOVEDADES (modo masivo) ========
+let NV_EDITING = false; // flag del modo edición masiva
+
+function rangoActual() {
+  return document.getElementById("cgRango")?.value === "18-06" ? "18-06" : "06-18";
 }
+
+function horaEnPuntoValida(hhmm) {
+  if (!/^\d{2}:\d{2}$/.test(hhmm)) return false;
+  const [h, m] = hhmm.split(":").map(Number);
+  if (m !== 0) return false; // sólo en punto
+  if (rangoActual() === "06-18") return h >= 6 && h <= 18; // 18:00 permitido como tope visual
+  // 18-06: 18..23 o 0..6
+  return (h >= 18 && h <= 23) || (h >= 0 && h <= 6);
+}
+
+// Crea barra de acciones de novedades (una sola vez)
+function ensureNvControls() {
+  const cont = document.querySelector(".novedades");
+  if (!cont || cont.querySelector(".nv-actions")) return;
+
+  const bar = document.createElement("div");
+  bar.className = "nv-actions";
+  bar.style.display = "flex";
+  bar.style.gap = "8px";
+  bar.style.padding = "10px";
+  bar.style.borderTop = "1px solid #000";
+  bar.style.background = "#f1f1f1";
+
+  const btnEditAll = document.createElement("button");
+  btnEditAll.id = "nvEditAll";
+  btnEditAll.type = "button";
+  btnEditAll.textContent = "Editar novedades";
+  const btnSaveAll = document.createElement("button");
+  btnSaveAll.id = "nvSaveAll";
+  btnSaveAll.type = "button";
+  btnSaveAll.textContent = "Guardar";
+  const btnCancelAll = document.createElement("button");
+  btnCancelAll.id = "nvCancelAll";
+  btnCancelAll.type = "button";
+  btnCancelAll.textContent = "Cancelar";
+
+  // estilos simples
+  [btnEditAll, btnSaveAll, btnCancelAll].forEach(b => {
+    b.style.background = "#e10600";
+    b.style.color = "#fff";
+    b.style.border = "0";
+    b.style.borderRadius = "8px";
+    b.style.padding = "8px 12px";
+    b.style.fontWeight = "700";
+    b.style.cursor = "pointer";
+  });
+  btnEditAll.style.background = "#3e3e3e";
+  btnCancelAll.style.background = "#555";
+
+  bar.appendChild(btnEditAll);
+  bar.appendChild(btnSaveAll);
+  bar.appendChild(btnCancelAll);
+
+  // al crear, en lectura quedan ocultos
+  const isLecturaNow = document.getElementById("modeBtn")?.classList.contains("is-lectura");
+  bar.style.display = isLecturaNow ? "none" : "flex";
+
+  cont.insertBefore(bar, cont.querySelector(".linea-card")); // debajo del h2
+
+  // handlers
+  btnEditAll.addEventListener("click", enterNvEditMode);
+  btnSaveAll.addEventListener("click", saveNvEdits);
+  btnCancelAll.addEventListener("click", cancelNvEdits);
+}
+
+function enterNvEditMode() {
+  NV_EDITING = true;
+  // Para cada <li>, convertir en inputs
+  document.querySelectorAll(".linea-card li").forEach(li => {
+    const linea = li.closest(".linea-card")?.querySelector("h3")?.textContent.trim() || "";
+    // leer actuales
+    const b = li.querySelector("b");
+    const horaActual = li.dataset.hora || (b ? b.textContent.replace(/:$/, "").trim() : "06:00");
+
+    const txtNode = li.querySelector(".nv-text");
+    const textoActual = txtNode ? txtNode.textContent : (li.dataset.texto || "");
+
+    // guardar originales para poder localizar y/o cancelar
+    li.dataset.originalLinea = linea;
+    li.dataset.originalHora = horaActual;
+    li.dataset.originalTexto = textoActual;
+
+    // limpiar y armar UI de edición
+    li.innerHTML = "";
+
+    const inHora = document.createElement("input");
+    inHora.type = "time";
+    inHora.step = 3600; // sólo en punto
+    inHora.value = horaActual;
+    inHora.style.width = "110px";
+    inHora.style.fontWeight = "700";
+
+    // marcar visualmente si queda fuera de franja
+    function validateHourInput() {
+      const ok = horaEnPuntoValida(inHora.value);
+      inHora.style.outline = ok ? "2px solid transparent" : "2px solid #e10600";
+      return ok;
+    }
+    inHora.addEventListener("input", validateHourInput);
+    setTimeout(validateHourInput, 0);
+
+    const ta = document.createElement("textarea");
+    ta.rows = 2;
+    ta.value = textoActual;
+    ta.style.width = "100%";
+    ta.style.marginLeft = "8px";
+
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.gap = "8px";
+    row.style.alignItems = "center";
+    row.appendChild(inHora);
+    row.appendChild(ta);
+
+    li.appendChild(row);
+  });
+}
+
+function saveNvEdits() {
+  if (!NV_EDITING) return;
+
+  const items = Array.from(document.querySelectorAll(".linea-card li"));
+  const list = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
+
+  for (const li of items) {
+    const input = li.querySelector('input[type="time"]');
+    const ta    = li.querySelector('textarea');
+    if (!input || !ta) continue;
+
+    const oldLinea = li.dataset.originalLinea;
+    const oldHora  = li.dataset.originalHora;
+    const oldTexto = li.dataset.originalTexto;
+
+    const newHora  = input.value;
+    const newTexto = ta.value.trim();
+
+    if (!newTexto) { alert("Hay una novedad sin descripción."); ta.focus(); return; }
+    if (!horaEnPuntoValida(newHora)) { alert("Hay una hora fuera de la franja o no es 'en punto'."); input.focus(); return; }
+
+    // ⬇️ AQUÍ va:
+    const idx = list.findIndex(nv => nv.linea === oldLinea && nv.hora === oldHora && nv.texto === oldTexto);
+    if (idx !== -1) list[idx] = { linea: oldLinea, hora: newHora, texto: newTexto };
+  }
+
+  list.sort((a,b)=> (a.linea||"").localeCompare(b.linea||"") || (a.hora||"").localeCompare(b.hora||""));
+  localStorage.setItem(FORM_KEY, JSON.stringify(list));
+  if (window.syncNow) window.syncNow();
+
+  NV_EDITING = false;
+  renderNovedades();
+}
+
+function cancelNvEdits() {
+  NV_EDITING = false;
+  renderNovedades();
+}
+
+// Render de novedades SIN botón "Editar" por item
+function renderNovedades() {
+  ensureNvControls();
+
+  // Mostrar/ocultar barra de acciones según el modo
+  const bar = document.querySelector(".nv-actions");
+  const isLectura = document.getElementById("modeBtn")?.classList.contains("is-lectura");
+  if (bar) bar.style.display = isLectura ? "none" : "flex";
+
+  // Limpiar listas
+  document.querySelectorAll(".linea-card ul").forEach(u => u.innerHTML = "");
+
+  // Leer y ordenar
+  const saved = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
+  saved.sort((a, b) =>
+    (a.linea || "").localeCompare(b.linea || "") ||
+    (a.hora || "").localeCompare(b.hora || "")
+  );
+
+  // Pintar
+  saved.forEach(({ linea, hora, texto }) => {
+    const card = Array.from(document.querySelectorAll(".linea-card"))
+      .find(c => c.querySelector("h3").textContent.trim() === linea);
+    if (!card) return;
+
+    const ul = card.querySelector("ul");
+
+    const li = document.createElement("li");
+    li.dataset.linea = linea;
+    li.dataset.hora  = hora;   // sin dos puntos
+    li.dataset.texto = texto;
+
+    const b = document.createElement("b");
+    b.textContent = `${hora}:`;
+
+    const spanTxt = document.createElement("span");
+    spanTxt.className = "nv-text";
+    spanTxt.textContent = " " + texto;
+
+    // Botón borrar
+    const btnDel = document.createElement("button");
+    btnDel.type = "button";
+    btnDel.className = "nv-del";
+    btnDel.textContent = "×";
+    btnDel.title = "Eliminar novedad";
+    btnDel.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const { linea, hora, texto } = li.dataset;
+      if (confirm("¿Eliminar esta novedad?")) {
+        deleteNovedad(linea, hora, texto);
+      }
+    });
+    // Ocultar en modo lectura
+    if (isLectura) btnDel.style.display = "none";
+
+    // Orden final: hora, texto, botón
+    li.appendChild(b);
+    li.appendChild(spanTxt);
+    li.appendChild(btnDel);
+    ul.appendChild(li);
+  });
+}
+
+// Crea un <select> de horas "en punto" según la franja actual y setea valor inicial
+function createHoraSelect(initialValue){
+  const sel = document.createElement("select");
+  sel.required = true;
+
+  const rango = document.getElementById("cgRango")?.value || "06-18";
+  const hours = [];
+  if (rango === "06-18") {
+    for (let h=6; h<18; h++) hours.push(h);
+  } else {
+    for (let h=18; h<=23; h++) hours.push(h);
+    for (let h=0; h<=6; h++) hours.push(h);
+  }
+  sel.innerHTML = hours.map(h=>{
+    const v = String(h).padStart(2,"0")+":00";
+    return `<option value="${v}">${v}</option>`;
+  }).join("");
+
+  if (initialValue && Array.from(sel.options).some(o=>o.value===initialValue)){
+    sel.value = initialValue;
+  }
+  return sel;
+}
+
+
+
 if (window.syncNow) window.syncNow();
 
 // === Borrar todas ===
@@ -292,11 +610,42 @@ function clearNovedades() {
   document.querySelectorAll(".linea-card ul").forEach(u => u.innerHTML = "");
 }
 
+
+
+function addNovedad(linea, hora, texto, restored = false) {
+  if (!restored) {
+    const saved = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
+    saved.push({ linea, hora, texto });
+    saved.sort((a,b)=> (a.linea||"").localeCompare(b.linea||"") || (a.hora||"").localeCompare(b.hora||""));
+    localStorage.setItem(FORM_KEY, JSON.stringify(saved));
+    if (window.syncNow) window.syncNow();
+  }
+  renderNovedades();
+}
+
+function deleteNovedad(linea, hora, texto) {
+  const list = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
+  const idx = list.findIndex(nv => nv.linea === linea && nv.hora === hora && nv.texto === texto);
+  if (idx !== -1) {
+    list.splice(idx, 1);
+    localStorage.setItem(FORM_KEY, JSON.stringify(list));
+    if (window.syncNow) window.syncNow();
+  }
+  renderNovedades();
+}
+
 // === Manejo del formulario ===
 formNovedad.addEventListener("submit", e => {
   e.preventDefault();
+
+  // ⚠️ Asegurar que el select tenga opciones (por si aún no se generaron)
+  const selHora = document.getElementById("nvHora");
+  if (selHora && selHora.tagName.toLowerCase() === "select" && selHora.options.length === 0) {
+    buildNvHoraOptions();
+  }
+
   const linea = nvLinea.value.trim();
-  const hora = nvHora.value.trim();
+  const hora  = (document.getElementById("nvHora")?.value || "").trim();
   const texto = nvTexto.value.trim();
   const rango = document.getElementById("cgRango").value;
 
@@ -305,12 +654,17 @@ formNovedad.addEventListener("submit", e => {
     return;
   }
 
-  // 🔹 Validar que la hora esté dentro del rango
-  const h = parseInt(hora.split(":")[0]);
+  // HH:00 solamente
+  if (!/^\d{2}:00$/.test(hora)) {
+    alert("Usá horas en punto (HH:00).");
+    return;
+  }
+
+  // Validar franja
+  const h = parseInt(hora.split(":")[0], 10);
   let valido = false;
   if (rango === "06-18" && h >= 6 && h < 18) valido = true;
   if (rango === "18-06" && (h >= 18 || h < 6)) valido = true;
-
   if (!valido) {
     alert("⚠️ La hora ingresada está fuera del rango seleccionado.");
     return;
@@ -318,11 +672,11 @@ formNovedad.addEventListener("submit", e => {
 
   addNovedad(linea, hora, texto);
   formNovedad.reset();
-
-  // 🔹 Redibujar la lista ordenada
-  document.querySelectorAll(".linea-card ul").forEach(u => u.innerHTML = "");
-  loadNovedades();
+  buildNvHoraOptions(); // reponer opciones y dejar seleccionada la primera
+  renderNovedades();
 });
+
+
 
 nvClear.addEventListener("click", () => { 
   clearNovedades(); 
@@ -350,6 +704,8 @@ function toggleBotoneras(visible) {
 
 // ======== PERSISTENCIA ÚNICA DE LA TABLA PRINCIPAL ========
 const TABLA_KEY = "tabla_produccion_v1";
+const TABLA_FILTRO_KEY = "tabla_filtrar_completas_v1"; // true => mostrar solo filas completadas
+
 
 // 🔹 Guarda automáticamente al editar
 document.addEventListener("DOMContentLoaded", () => {
@@ -359,16 +715,18 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+
 // Guarda
 function saveTabla() {
   const filas = [];
   document.querySelectorAll(".tabla-produccion tbody tr").forEach(tr => {
     const linea = tr.querySelector("th").textContent.trim();
     const celdas = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
-    filas.push({ linea, celdas });
+    filas.push({ linea, celdas }); // celdas.length === 6
   });
   localStorage.setItem(TABLA_KEY, JSON.stringify(filas));
 }
+
 
 // Restaura
 function restoreTabla() {
@@ -378,12 +736,76 @@ function restoreTabla() {
       .find(tr => tr.querySelector("th").textContent.trim() === linea);
     if (fila) {
       const tds = fila.querySelectorAll("td");
-      celdas.forEach((txt, i) => {
-        if (tds[i]) tds[i].textContent = txt;
-      });
+      // Escribo hasta 6 celdas, limpio extras si las hubiera
+      for (let i = 0; i < tds.length; i++) {
+        tds[i].textContent = (celdas && celdas[i]) ? celdas[i] : "";
+      }
     }
   });
+
+  // aplicar filtro si estaba activo
+  const onlyCompleted = localStorage.getItem(TABLA_FILTRO_KEY) === "true";
+  aplicarFiltroFilasCompletadas(onlyCompleted);
 }
+
+function filaTieneContenido(tr) {
+  const celdas = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
+  // Consideramos "completada" la línea si hay contenido en al menos Sabor 1 o Formato 1 o Vel 1
+  // (si querés que sea “todas las 6 llenas”, cambiá la condición)
+  return celdas.some(txt => txt.length > 0);
+}
+
+function aplicarFiltroFilasCompletadas(onlyCompleted) {
+  const filas = document.querySelectorAll(".tabla-produccion tbody tr");
+  filas.forEach(tr => {
+    const visible = !onlyCompleted || filaTieneContenido(tr);
+    tr.style.display = visible ? "" : "none";
+  });
+  localStorage.setItem(TABLA_FILTRO_KEY, onlyCompleted ? "true" : "false");
+}
+
+// ======== Estado de edición de la tabla ========
+let TABLE_EDITING = false;
+
+function setTableEditing(on) {
+  TABLE_EDITING = !!on;
+  const tds = document.querySelectorAll(".tabla-produccion tbody td");
+  tds.forEach(td => {
+    td.setAttribute("contenteditable", on ? "true" : "false");
+    td.classList.toggle("is-editing", on);
+  });
+}
+
+function enterEditMode() {
+  // mostrar todas las filas para editar
+  aplicarFiltroFilasCompletadas(false);
+  setTableEditing(true);
+  const first = document.querySelector(".tabla-produccion tbody td");
+  if (first) first.focus();
+}
+
+function saveAndLock() {
+  // guardar y mostrar solo filas con contenido, luego bloquear edición
+  saveTabla();
+  aplicarFiltroFilasCompletadas(true);
+  setTableEditing(false);
+  // empujar sync inmediato si está disponible
+  if (window.syncNow) window.syncNow();
+}
+
+const btnEditarFormatos = document.getElementById("btnEditarFormatos");
+const btnGrabarFormatos = document.getElementById("btnGrabarFormatos");
+
+if (btnEditarFormatos) {
+  btnEditarFormatos.addEventListener("click", enterEditMode);
+}
+if (btnGrabarFormatos) {
+  btnGrabarFormatos.addEventListener("click", saveAndLock);
+}
+
+
+
+
 
 // Limpia
 function clearTabla() {
@@ -392,18 +814,8 @@ function clearTabla() {
   console.log("🧹 Tabla principal vaciada.");
 }
 
-// Extiende los botones existentes
-const oldCgClear = cgClear;
-cgClear = function() {
-  oldCgClear();
-  clearTabla();
-};
 
-const oldClearNovedades = clearNovedades;
-clearNovedades = function() {
-  oldClearNovedades();
-  clearTabla();
-};
+
 
 // ======== FIX: BORRADO DEFINITIVO DE DATOS DE LA TABLA PRINCIPAL ========
 
@@ -417,9 +829,6 @@ function clearTablaTotal() {
   console.log("🧹 Tabla principal completamente vaciada.");
 }
 
-// Vinculamos con ambos botones (corridas y novedades)
-document.getElementById("cgClear").addEventListener("click", clearTablaTotal);
-document.getElementById("nvClear").addEventListener("click", clearTablaTotal);
 
 // Además, ejecutamos una limpieza automática si detecta datos corruptos
 document.addEventListener("DOMContentLoaded", () => {
@@ -535,28 +944,41 @@ pdf.save("informe-produccion.pdf");
 });
 
 
+
 /* =========================
-   Botón de MODO (CARGA / LECTURA)
+   Botón de MODO (CARGA / LECTURA) — robusto
    ========================= */
 (function () {
   const MODE_KEY = "modo_app_v1";
 
-  // Referencia o crea el botón (por si no existe aún en el HTML)
+  // 1) Asegurar el botón y sus spans
   let modeBtn = document.getElementById("modeBtn");
   if (!modeBtn) {
     modeBtn = document.createElement("button");
     modeBtn.id = "modeBtn";
+    modeBtn.type = "button";
     modeBtn.className = "mode-btn-header";
-    modeBtn.innerHTML =
-      '<span class="mode-icon"></span><span class="mode-label"></span>';
-    const logoBox = document.querySelector(".logo-encabezado");
-    if (logoBox) logoBox.prepend(modeBtn);
-    else document.body.appendChild(modeBtn);
+    modeBtn.innerHTML = '<span class="mode-icon" aria-hidden="true"></span><span class="mode-label"></span>';
+    (document.querySelector(".logo-encabezado") || document.body).prepend(modeBtn);
   }
+  function ensureParts(){
+    if (!modeBtn.querySelector(".mode-icon")) {
+      const i = document.createElement("span");
+      i.className = "mode-icon";
+      i.setAttribute("aria-hidden","true");
+      modeBtn.prepend(i);
+    }
+    if (!modeBtn.querySelector(".mode-label")) {
+      const l = document.createElement("span");
+      l.className = "mode-label";
+      modeBtn.appendChild(l);
+    }
+  }
+  ensureParts();
 
-  const label = modeBtn.querySelector(".mode-label");
+  const label = () => modeBtn.querySelector(".mode-label");
 
-  // --- Mostrar u ocultar zonas editables según el modo ---
+  // 2) Mostrar/ocultar controles de edición (sin tocar contenteditable de la tabla)
   function showEditUI(show) {
     const selectors = [
       ".cg-form",
@@ -565,7 +987,10 @@ pdf.save("informe-produccion.pdf");
       "#cgClear",
       "#nvClear",
       "#formBarra button",
-      "#formNovedad button"
+      "#formNovedad button",
+      ".tabla-acciones",
+      "#btnEditarFormatos",
+      "#btnGrabarFormatos",
     ];
     selectors.forEach((sel) =>
       document.querySelectorAll(sel).forEach((el) => {
@@ -573,46 +998,52 @@ pdf.save("informe-produccion.pdf");
         el.style.display = show ? "" : "none";
       })
     );
-
-    // Encabezado
+    // inputs de encabezado
     ["turno", "tn", "fecha"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.disabled = !show;
     });
-
-    // Bloquea edición en lectura
-    document
-      .querySelectorAll(".tabla-produccion tbody td")
-      .forEach((td) =>
-        td.setAttribute("contenteditable", show ? "true" : "false")
-      );
   }
 
-  // --- Aplica el modo ---
+  // 3) Estado edición tabla (lo usa grabar/editar). Si lo tenés en otro sitio, dejamos estas no-ops seguras
+  if (typeof window.setTableEditing !== "function") {
+    window.setTableEditing = function(on){
+      document.querySelectorAll(".tabla-produccion tbody td")
+        .forEach(td => td.setAttribute("contenteditable", on ? "true" : "false"));
+    };
+  }
+
+  // 4) Aplicar modo + accesibilidad
   function applyMode(mode) {
-    const lectura = mode === "lectura";
-    modeBtn.classList.toggle("is-lectura", lectura);
-    label.textContent = lectura ? "Modo: LECTURA" : "Modo: CARGA";
-    showEditUI(!lectura);
-    localStorage.setItem(MODE_KEY, mode);
-  }
+  const lectura = mode === "lectura";
+  modeBtn.classList.toggle("is-lectura", lectura);
+  const text = lectura ? "Modo: LECTURA" : "Modo: CARGA";
+  
+  
+  showEditUI(!lectura);
+  updateBarDeleteVisibility(!lectura);
+  if (lectura && typeof cancelNvEdits === "function") cancelNvEdits();
+if (typeof renderNovedades === "function") renderNovedades();
+  if (lectura) setTableEditing(false);
+  localStorage.setItem(MODE_KEY, mode);
+}
 
-  // --- Cambiar modo al hacer clic ---
-  modeBtn.addEventListener("click", () => {
-    const newMode = modeBtn.classList.contains("is-lectura")
-      ? "carga"
-      : "lectura";
+
+  // 5) Click handler (evitamos listeners duplicados)
+  modeBtn.onclick = () => {
+    const newMode = modeBtn.classList.contains("is-lectura") ? "carga" : "lectura";
     applyMode(newMode);
-  });
+  };
 
-  // --- Inicialización ---
+  // 6) Init
   applyMode(localStorage.getItem(MODE_KEY) || "carga");
 
-  // --- Sobrescribe la función toggleBotoneras ---
-  window.toggleBotoneras = function (visible) {
-    showEditUI(visible);
-  };
+  // 7) Exponer hook para otras partes que te llamaban
+  window.toggleBotoneras = function (visible) { showEditUI(visible); };
 })();
+
+function loadNovedades(){ renderNovedades(); }
+
 
 /* =========================
    🔄 FIRESTORE — Sync en vivo + puntero global al informe activo
@@ -678,10 +1109,13 @@ pdf.save("informe-produccion.pdf");
       restoreTabla();
       if (typeof cgBuildAxis === "function") cgBuildAxis();
       restoreCorridas();
-      loadNovedades();
+      renderNovedades();
     } finally {
       SYNC.applying = false;
     }
+    // asegurar que el estado de edición se respete tras repintar
+    if (!TABLE_EDITING) setTableEditing(false);
+
   }
 
   // ------- Subir cambios locales (debounced) -------

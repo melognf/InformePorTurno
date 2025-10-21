@@ -36,10 +36,11 @@
                 <input type="text" id="dia" class="encabezado-input" readonly placeholder="Día" />
               </div>
               <div class="logo-encabezado">
-  <button id="modeBtn" class="mode-btn-header">
-    <span class="mode-icon"></span>
-    <span class="mode-label"></span>
-  </button>
+  <button id="modeBtn" class="mode-btn-header" type="button">
+  <span class="mode-icon" aria-hidden="true"></span>
+  <span class="mode-label"></span>
+</button>
+
   <img src="multimedia/Captura.JPG" alt="MG Monte Grande" />
 </div>
 
@@ -48,28 +49,38 @@
         </tr>
 
         <tr class="encabezado-secundario">
-          <th></th>
-          <th>Formato</th>
-          <th>Vel. Nominal</th>
-          <th>Formato 2</th>
-          <th>Vel. Nominal 2</th>
-          <th>Formato 3</th>
-          <th>Vel. Nominal 3</th>
-        </tr>
-      </thead>
+  <th></th>
+  <th>Sabor 1</th>
+  <th>Formato 1</th>
+  <th>Velocidad nominal 1</th>
+  <th>Sabor 2</th>
+  <th>Formato 2</th>
+  <th>Velocidad nominal 2</th>
+</tr>
+</thead>
 
-      <tbody>
-        <tr><th>LÍNEA 1</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-        <tr><th>LÍNEA 2</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-        <tr><th>LÍNEA 3</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-        <tr><th>LÍNEA 4</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-        <tr><th>LÍNEA 5</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-        <tr><th>LÍNEA 6</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-        <tr><th>LÍNEA 7</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-      </tbody>
-    </table>
+<tbody>
+  <tr><th>LÍNEA 1</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+  <tr><th>LÍNEA 2</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+  <tr><th>LÍNEA 3</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+  <tr><th>LÍNEA 4</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+  <tr><th>LÍNEA 5</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+  <tr><th>LÍNEA 6</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+  <tr><th>LÍNEA 7</th><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+</tbody>
 
-    <!-- ===== CRONOGRAMA ===== -->
+      
+
+
+</table>
+
+    <!-- Acciones de la TABLA de formatos (solo visibles en MODO CARGA) -->
+     <div class="formatos-acciones">
+  <button id="btnEditarFormatos" type="button" title="Mostrar todas las líneas">Editar</button>
+  <button id="btnGrabarFormatos" type="button" title="Guardar y mostrar solo completadas">Grabar</button>
+</div>
+
+  <!-- ===== CRONOGRAMA ===== -->
     <section id="cronograma" class="cronograma">
       <header class="cronograma-head">
         <h3>INICIO Y CORTE DE PRODUCCIÓN</h3>
@@ -155,13 +166,16 @@
             <option>A &amp; E</option><option>PLANEAMIENTO</option>
           </select>
         </label>
-        <label>Hora: <input type="time" id="nvHora" required></label>
+        <label>Hora:<select id="nvHora" required></select></label>
+
         <label class="full">Descripción:
           <textarea id="nvTexto" rows="2" placeholder="Detalle de la novedad..." required></textarea>
         </label>
         <div class="acciones">
           <button type="submit">Agregar</button>
           <button type="button" id="nvClear">Borrar todo</button>
+          <button type="button" id="nvCancelEdit" style="display:none;">Cancelar edición</button>
+
         </div>
       </form>
     </section>
