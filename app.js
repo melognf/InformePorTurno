@@ -422,84 +422,101 @@ function ensureNvControls() {
 
 function enterNvEditMode() {
   NV_EDITING = true;
-  // Para cada <li>, convertir en inputs
+
   document.querySelectorAll(".linea-card li").forEach(li => {
     const linea = li.closest(".linea-card")?.querySelector("h3")?.textContent.trim() || "";
-    // leer actuales
-    const b = li.querySelector("b");
-    const horaActual = li.dataset.hora || (b ? b.textContent.replace(/:$/, "").trim() : "06:00");
 
-    const txtNode = li.querySelector(".nv-text");
-    const textoActual = txtNode ? txtNode.textContent : (li.dataset.texto || "");
+    // alto original del ítem ya renderizado (modo lectura)
+    const originalHeight = Math.max(60, Math.round(li.getBoundingClientRect().height));
 
-    // guardar originales para poder localizar y/o cancelar
+    // leer valores actuales
+    const horaActual = li.dataset.hora || li.querySelector("b")?.textContent.replace(/:$/, "").trim() || "06:00";
+    const textoActual = li.dataset.texto || li.querySelector(".nv-text")?.textContent || "";
+
+    // guardar originales para localizar en el array
     li.dataset.originalLinea = linea;
-    li.dataset.originalHora = horaActual;
+    li.dataset.originalHora  = horaActual;
     li.dataset.originalTexto = textoActual;
 
-    // limpiar y armar UI de edición
+    // limpiar y marcar como editing (mantiene la grilla del li)
+    li.classList.add("editing");
     li.innerHTML = "";
 
+    // celda 1: input hora (ocupa toda la altura del li)
     const inHora = document.createElement("input");
     inHora.type = "time";
-    inHora.step = 3600; // sólo en punto
+    inHora.step = 3600; // en punto
     inHora.value = horaActual;
-    inHora.style.width = "110px";
-    inHora.style.fontWeight = "700";
+    inHora.className = "nv-edit-time";
 
-    // marcar visualmente si queda fuera de franja
-    function validateHourInput() {
+    // validación visual
+    const validateHourInput = () => {
       const ok = horaEnPuntoValida(inHora.value);
       inHora.style.outline = ok ? "2px solid transparent" : "2px solid #e10600";
       return ok;
-    }
+    };
     inHora.addEventListener("input", validateHourInput);
     setTimeout(validateHourInput, 0);
 
+    // celda 2: textarea que ocupa todo el alto y ancho de su celda
     const ta = document.createElement("textarea");
-    ta.rows = 2;
+    ta.className = "nv-edit-text";
     ta.value = textoActual;
-    ta.style.width = "100%";
-    ta.style.marginLeft = "8px";
 
-    const row = document.createElement("div");
-    row.style.display = "flex";
-    row.style.gap = "8px";
-    row.style.alignItems = "center";
-    row.appendChild(inHora);
-    row.appendChild(ta);
+    // altura = altura del ítem en modo lectura
+    ta.style.height = originalHeight + "px";
 
-    li.appendChild(row);
+    // auto-grow para que si escribe más, crezca
+    const autoGrow = () => { ta.style.height = "auto"; ta.style.height = Math.max(originalHeight, ta.scrollHeight) + "px"; };
+    ta.addEventListener("input", autoGrow);
+    setTimeout(autoGrow, 0);
+
+    li.appendChild(inHora);
+    li.appendChild(ta);
   });
 }
 
 function saveNvEdits() {
   if (!NV_EDITING) return;
 
-  const items = Array.from(document.querySelectorAll(".linea-card li"));
+  const items = Array.from(document.querySelectorAll(".linea-card li.editing"));
   const list = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
 
   for (const li of items) {
-    const input = li.querySelector('input[type="time"]');
-    const ta    = li.querySelector('textarea');
-    if (!input || !ta) continue;
+    const inHora = li.querySelector('input[type="time"]');
+    const ta     = li.querySelector('textarea');
+    if (!inHora || !ta) continue;
 
-    const oldLinea = li.dataset.originalLinea;
-    const oldHora  = li.dataset.originalHora;
-    const oldTexto = li.dataset.originalTexto;
+    const oldLinea = li.dataset.originalLinea || li.dataset.linea || "";
+    const oldHora  = li.dataset.originalHora  || li.dataset.hora  || "";
+    const oldTexto = li.dataset.originalTexto || li.dataset.texto || "";
 
-    const newHora  = input.value;
-    const newTexto = ta.value.trim();
+    const newHora  = (inHora.value || "").trim();
+    const newTexto = (ta.value || "").trim();
 
     if (!newTexto) { alert("Hay una novedad sin descripción."); ta.focus(); return; }
-    if (!horaEnPuntoValida(newHora)) { alert("Hay una hora fuera de la franja o no es 'en punto'."); input.focus(); return; }
+    if (!horaEnPuntoValida(newHora)) { alert("Hay una hora fuera de la franja o no es 'en punto'."); inHora.focus(); return; }
 
-    // ⬇️ AQUÍ va:
-    const idx = list.findIndex(nv => nv.linea === oldLinea && nv.hora === oldHora && nv.texto === oldTexto);
-    if (idx !== -1) list[idx] = { linea: oldLinea, hora: newHora, texto: newTexto };
+    // localizar por la “triple llave” original
+    const idx = list.findIndex(nv =>
+      nv.linea === oldLinea && nv.hora === oldHora && nv.texto === oldTexto
+    );
+
+    if (idx !== -1) {
+      list[idx] = { linea: oldLinea, hora: newHora, texto: newTexto };
+    } else {
+      // fallback por si no se encontraba (no debería pasar, pero por las dudas)
+      const idx2 = list.findIndex(nv => nv.linea === oldLinea && nv.hora === oldHora);
+      if (idx2 !== -1) list[idx2] = { linea: oldLinea, hora: newHora, texto: newTexto };
+      else list.push({ linea: oldLinea, hora: newHora, texto: newTexto });
+    }
   }
 
-  list.sort((a,b)=> (a.linea||"").localeCompare(b.linea||"") || (a.hora||"").localeCompare(b.hora||""));
+  // ordenar y persistir
+  list.sort((a,b)=>
+    (a.linea||"").localeCompare(b.linea||"") ||
+    (a.hora||"").localeCompare(b.hora||"")
+  );
   localStorage.setItem(FORM_KEY, JSON.stringify(list));
   if (window.syncNow) window.syncNow();
 
@@ -509,8 +526,10 @@ function saveNvEdits() {
 
 function cancelNvEdits() {
   NV_EDITING = false;
+  // re-render vuelve a modo lectura con los valores previos guardados
   renderNovedades();
 }
+
 
 // Render de novedades SIN botón "Editar" por item
 function renderNovedades() {
@@ -532,47 +551,59 @@ function renderNovedades() {
   );
 
   // Pintar
-  saved.forEach(({ linea, hora, texto }) => {
-    const card = Array.from(document.querySelectorAll(".linea-card"))
-      .find(c => c.querySelector("h3").textContent.trim() === linea);
-    if (!card) return;
+  // pintar
+saved.forEach(({ linea, hora, texto }) => {
+  const card = Array.from(document.querySelectorAll(".linea-card"))
+    .find(c => c.querySelector("h3").textContent.trim() === linea);
+  if (!card) return;
 
-    const ul = card.querySelector("ul");
+  const ul = card.querySelector("ul");
 
-    const li = document.createElement("li");
-    li.dataset.linea = linea;
-    li.dataset.hora  = hora;   // sin dos puntos
-    li.dataset.texto = texto;
+  const li = document.createElement("li");
+  li.dataset.linea = linea;
+  li.dataset.hora  = hora;
+  li.dataset.texto = texto;
 
-    const b = document.createElement("b");
-    b.textContent = `${hora}:`;
+  // celda 1: hora
+  const b = document.createElement("b");
+  b.textContent = `${hora}:`;
 
-    const spanTxt = document.createElement("span");
-    spanTxt.className = "nv-text";
-    spanTxt.textContent = " " + texto;
+  // celda 2: texto + botón borrar alineado a la derecha
+  const wrap = document.createElement("div");
+  wrap.style.display = "flex";
+  wrap.style.alignItems = "flex-start";
+  wrap.style.gap = "8px";
 
-    // Botón borrar
-    const btnDel = document.createElement("button");
-    btnDel.type = "button";
-    btnDel.className = "nv-del";
-    btnDel.textContent = "×";
-    btnDel.title = "Eliminar novedad";
-    btnDel.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const { linea, hora, texto } = li.dataset;
-      if (confirm("¿Eliminar esta novedad?")) {
-        deleteNovedad(linea, hora, texto);
-      }
-    });
-    // Ocultar en modo lectura
-    if (isLectura) btnDel.style.display = "none";
+  const spanTxt = document.createElement("span");
+  spanTxt.className = "nv-text";
+  spanTxt.textContent = texto;
+  spanTxt.style.flex = "1 1 auto";
 
-    // Orden final: hora, texto, botón
-    li.appendChild(b);
-    li.appendChild(spanTxt);
-    li.appendChild(btnDel);
-    ul.appendChild(li);
+  const btnDel = document.createElement("button");
+  btnDel.type = "button";
+  btnDel.className = "nv-del";
+  btnDel.textContent = "×";
+  btnDel.title = "Eliminar novedad";
+  btnDel.style.flex = "0 0 auto";
+  btnDel.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (confirm("¿Eliminar esta novedad?")) {
+      deleteNovedad(linea, hora, texto);
+    }
   });
+  // ocultar en lectura
+  if (document.getElementById("modeBtn")?.classList.contains("is-lectura")) {
+    btnDel.style.display = "none";
+  }
+
+  wrap.appendChild(spanTxt);
+  wrap.appendChild(btnDel);
+
+  li.appendChild(b);
+  li.appendChild(wrap);
+  ul.appendChild(li);
+});
+
 }
 
 // Crea un <select> de horas "en punto" según la franja actual y setea valor inicial
@@ -736,17 +767,19 @@ function restoreTabla() {
       .find(tr => tr.querySelector("th").textContent.trim() === linea);
     if (fila) {
       const tds = fila.querySelectorAll("td");
-      // Escribo hasta 6 celdas, limpio extras si las hubiera
       for (let i = 0; i < tds.length; i++) {
         tds[i].textContent = (celdas && celdas[i]) ? celdas[i] : "";
       }
     }
   });
 
-  // aplicar filtro si estaba activo
-  const onlyCompleted = localStorage.getItem(TABLA_FILTRO_KEY) === "true";
+  // 👉 si estoy en LECTURA, mostrar solo completadas; si no, usar lo guardado
+  const isLectura = document.getElementById("modeBtn")?.classList.contains("is-lectura");
+  const onlyCompletedStored = localStorage.getItem(TABLA_FILTRO_KEY) === "true";
+  const onlyCompleted = isLectura ? true : onlyCompletedStored;
   aplicarFiltroFilasCompletadas(onlyCompleted);
 }
+
 
 function filaTieneContenido(tr) {
   const celdas = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
@@ -773,8 +806,12 @@ function setTableEditing(on) {
   tds.forEach(td => {
     td.setAttribute("contenteditable", on ? "true" : "false");
     td.classList.toggle("is-editing", on);
+    aplicarFiltroFilasCompletadas(isLecturalectura ? true : (localStorage.getItem(TABLA_FILTRO_KEY) === "true"));
+
   });
+  
 }
+
 
 function enterEditMode() {
   // mostrar todas las filas para editar
