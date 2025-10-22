@@ -756,6 +756,14 @@ function saveTabla() {
     filas.push({ linea, celdas }); // celdas.length === 6
   });
   localStorage.setItem(TABLA_KEY, JSON.stringify(filas));
+  resaltarCeldasConDatos();
+}
+
+function resaltarCeldasConDatos() {
+  document.querySelectorAll(".tabla-produccion tbody td").forEach(td => {
+    const texto = td.textContent.trim();
+    td.classList.toggle("has-data", texto.length > 0);
+  });
 }
 
 
@@ -769,6 +777,7 @@ function restoreTabla() {
       const tds = fila.querySelectorAll("td");
       for (let i = 0; i < tds.length; i++) {
         tds[i].textContent = (celdas && celdas[i]) ? celdas[i] : "";
+        resaltarCeldasConDatos();
       }
     }
   });
@@ -819,6 +828,7 @@ function enterEditMode() {
   setTableEditing(true);
   const first = document.querySelector(".tabla-produccion tbody td");
   if (first) first.focus();
+  resaltarCeldasConDatos();
 }
 
 function saveAndLock() {
