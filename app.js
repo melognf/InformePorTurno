@@ -1081,6 +1081,17 @@ if (typeof renderNovedades === "function") renderNovedades();
 
 function loadNovedades(){ renderNovedades(); }
 
+document.addEventListener("DOMContentLoaded", () => {
+  const labels = [
+    "Sabor 1", "Formato 1", "Velocidad nominal 1",
+    "Sabor 2", "Formato 2", "Velocidad nominal 2"
+  ];
+  document.querySelectorAll(".tabla-produccion tbody tr").forEach(tr => {
+    tr.querySelectorAll("td").forEach((td, i) => {
+      td.setAttribute("data-label", labels[i] || "");
+    });
+  });
+});
 
 /* =========================
    🔄 FIRESTORE — Sync en vivo + puntero global al informe activo
