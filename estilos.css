@@ -194,10 +194,83 @@ select.encabezado-input {
   border-top: none;
 }
 
+/* ============================================
+   FIX DEFINITIVO — BARRAS SIEMPRE COMPLETAS
+   ============================================ */
+
+/* Fila del cronograma */
 .cg-row {
   display: flex;
+}
+
+/* Carril donde van las barras */
+.cg-lane {
+  position: relative;
+  flex: 1;
+  background: #d9d9d9;
+
+  /* fix clave */
+  overflow: visible !important;
+  min-height: 36px !important;
+
+  /* el borde va adentro, NO en cg-row */
+  border-left: 1px solid #ccc;
   border-bottom: 1px solid #bdbdbd;
 }
+
+/* Barra (corrida) */
+.cg-bar {
+  position: absolute !important;
+  height: 24px !important;
+  line-height: 24px !important;
+
+  /* TODAS alineadas correctamente */
+  top: 6px !important;
+
+  background: #e10600;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 3px;
+
+  padding: 0 8px 0 28px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
+}
+
+/* Botón X dentro de la barra */
+.cg-bar-close {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  font-size: 13px;
+  border-radius: 4px;
+
+  background: rgba(0,0,0,.4);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.5);
+  cursor: pointer;
+}
+
+.cg-bar-close:hover {
+  background: rgba(0,0,0,.6);
+}
+
+.cg-bar-close.is-hidden {
+  display: none;
+}
+
+
 
 .cg-linea {
   width: 110px;
@@ -1126,3 +1199,10 @@ input[type="date"]:focus {
     line-height: 1.25;
   }
 }
+
+.cg-lane {
+  position: relative;
+  overflow: visible !important;
+  min-height: 40px;
+}
+

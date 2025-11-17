@@ -78,6 +78,11 @@ function cgBuildAxis() {
   });
 }
 
+function adjustLaneHeight(lane) {
+  lane.style.height = "40px";
+}
+
+
 
 // ======== Agrega una barra ========
 // ¿Estoy en modo lectura?
@@ -107,68 +112,77 @@ function cgAddBar(linea, inicio, fin, sabor, restored = false) {
   if (!lane) return;
 
   const rangeText = `${inicio}|${fin}`;
-  const dupe = Array.from(lane.children).find(
-    b => b.dataset.timeRange === rangeText && b.textContent.replace(/^\s*×\s*/,'') === sabor
-  );
-  if (dupe) dupe.remove();
 
-  // --- cálculos ---
+  // Eliminar duplicados por seguridad
+  Array.from(lane.querySelectorAll(".cg-bar")).forEach(b => {
+    if (b.dataset.timeRange === rangeText && b.dataset.sabor === sabor) {
+      b.remove();
+    }
+  });
+
+  // Calcular posición horizontal
   const [iniH, iniM] = inicio.split(":").map(Number);
   const [finH, finM] = fin.split(":").map(Number);
-  const iniTotal = iniH * 60 + iniM;
-  const finTotal = finH * 60 + finM;
-  const totalHoras = 12 * 60;
+
+  const iniMin = iniH * 60 + iniM;
+  const finMin = finH * 60 + finM;
+
+  const total = 12 * 60;
   const startRange = window.cgStartHour * 60;
 
   let startMin, endMin;
-  if ((startRange + totalHoras) % (24*60) > startRange) {
-    startMin = Math.max(0, iniTotal - startRange);
-    endMin   = Math.min(totalHoras, finTotal - startRange);
-  } else {
-    startMin = (iniTotal >= startRange) ? iniTotal - startRange : (24*60 - startRange) + iniTotal;
-    endMin   = (finTotal >= startRange) ? finTotal - startRange : (24*60 - startRange) + finTotal;
-  }
-  const startPercent = (startMin / totalHoras) * 100;
-  const widthPercent = Math.max(1, ((endMin - startMin) / totalHoras) * 100);
 
-  const existingBars = lane.querySelectorAll(".cg-bar").length;
-  const offsetY = 8 + existingBars * 28;
+  const wrap = (startRange + total) % 1440 > startRange;
+
+  if (wrap) {
+    startMin = iniMin - startRange;
+    endMin   = finMin - startRange;
+  } else {
+    startMin = (iniMin >= startRange)
+      ? iniMin - startRange
+      : (1440 - startRange) + iniMin;
+
+    endMin = (finMin >= startRange)
+      ? finMin - startRange
+      : (1440 - startRange) + finMin;
+  }
+
+  startMin = Math.max(0, startMin);
+  endMin   = Math.min(total, endMin);
+
+  const left = (startMin / total) * 100;
+  const width = Math.max(1, ((endMin - startMin) / total) * 100);
+
+  // Siempre alineadas
+  const offsetY = 8;
 
   const bar = document.createElement("div");
   bar.className = "cg-bar";
   bar.dataset.timeRange = rangeText;
-  bar.dataset.linea = String(linea);
   bar.dataset.sabor = sabor;
-  bar.style.left = `${startPercent}%`;
-  bar.style.width = `${widthPercent}%`;
-  bar.style.top = `${offsetY}px`;
-  bar.dataset.restored = restored ? "true" : "false";
+  bar.dataset.linea = linea;
 
-  // botón "x"
-  const x = document.createElement("button");
-  x.type = "button";
-  x.className = "cg-bar-close";
-  x.textContent = "×";
-  if (isLectura()) x.classList.add("is-hidden");
-  x.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const l = bar.dataset.linea;
-    const [ini, fin] = bar.dataset.timeRange.split("|");
-    const sab = bar.dataset.sabor;
+  bar.style.left = `${left}%`;
+  bar.style.width = `${width}%`;
+  bar.style.top = `${offsetY}px`;
+
+  // BOTÓN X
+  const btn = document.createElement("button");
+  btn.className = "cg-bar-close";
+  btn.textContent = "×";
+  if (isLectura()) btn.classList.add("is-hidden");
+
+  btn.addEventListener("click", () => {
     bar.remove();
-    // recalcular altura del carril
-    const left = lane.querySelectorAll(".cg-bar").length;
-    lane.style.height = `${Math.max(40, 40 + (left-1) * 28)}px`;
-    removeCorrida(l, ini, fin, sab);
+    removeCorrida(linea, inicio, fin, sabor);
   });
 
-  bar.appendChild(x);
-  // el texto de la barra después del botón
+  bar.appendChild(btn);
   bar.appendChild(document.createTextNode(sabor));
 
   lane.appendChild(bar);
-  lane.style.height = `${40 + existingBars * 28}px`;
 
+  // Guardar
   if (!restored) {
     const saved = JSON.parse(localStorage.getItem("corridas") || "[]");
     saved.push({ linea, inicio, fin, sabor });
@@ -176,6 +190,7 @@ function cgAddBar(linea, inicio, fin, sabor, restored = false) {
     if (window.syncNow) window.syncNow();
   }
 }
+
 
 
 // ======== Limpia todo ========
@@ -208,7 +223,18 @@ function restoreCorridas() {
   document.querySelectorAll('.cg-lane').forEach(l => l.innerHTML='');
   const saved = JSON.parse(localStorage.getItem("corridas") || "[]");
   saved.forEach(c => cgAddBar(c.linea, c.inicio, c.fin, c.sabor, true));
-  updateBarDeleteVisibility(!isLectura()); // asegura visibilidad correcta
+  updateBarDeleteVisibility(!isLectura());
+  document.querySelectorAll(".cg-lane").forEach(lane => adjustLaneHeight(lane));
+
+  document.querySelectorAll(".cg-lane").forEach(lane => {
+  const bars = lane.querySelectorAll(".cg-bar");
+  bars.forEach((bar, i) => {
+    bar.style.top = `${8 + i * 28}px`;
+  });
+  adjustLaneHeight(lane);
+});
+
+ // asegura visibilidad correcta
 }
 
 
