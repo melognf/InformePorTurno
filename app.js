@@ -361,17 +361,25 @@ function buildNvHoraOptions(){
   sel.value = still ? prev : (sel.options[0]?.value || "");
 }
 
-// construir al cargar y cuando cambia la franja
+
+// Construir al cargar
 document.addEventListener("DOMContentLoaded", () => {
   buildNvHoraOptions();
-  renderNovedades?.();   // pinta lo guardado si lo tenés
+  renderNovedades();   // pinta lo que ya estaba guardado
 });
-document.getElementById("cgRango")?.addEventListener("change", buildNvHoraOptions);
+
+// Reconstruir cuando cambia la franja (06–18 / 18–06)
+const rangoSel = document.getElementById("cgRango");
+if (rangoSel) {
+  rangoSel.addEventListener("change", () => {
+    buildNvHoraOptions();
+    renderNovedades();   // 🔁 vuelve a ordenar y pintar las novedades
+  });
+}
 
 
-// Construir al cargar y cuando cambia la franja
-document.addEventListener("DOMContentLoaded", buildNvHoraOptions);
-document.getElementById("cgRango")?.addEventListener("change", buildNvHoraOptions);
+
+
 
 
 
@@ -459,6 +467,8 @@ function enterNvEditMode() {
     const horaActual = li.dataset.hora || li.querySelector("b")?.textContent.replace(/:$/, "").trim() || "06:00";
     const textoActual = li.dataset.texto || li.querySelector(".nv-text")?.textContent || "";
 
+
+
     // guardar originales para localizar en el array
     li.dataset.originalLinea = linea;
     li.dataset.originalHora  = horaActual;
@@ -539,10 +549,9 @@ function saveNvEdits() {
   }
 
   // ordenar y persistir
-  list.sort((a,b)=>
-    (a.linea||"").localeCompare(b.linea||"") ||
-    (a.hora||"").localeCompare(b.hora||"")
-  );
+    // ordenar y persistir según turno actual
+  sortNovedadesArray(list);
+
   localStorage.setItem(FORM_KEY, JSON.stringify(list));
   if (window.syncNow) window.syncNow();
 
@@ -554,6 +563,44 @@ function cancelNvEdits() {
   NV_EDITING = false;
   // re-render vuelve a modo lectura con los valores previos guardados
   renderNovedades();
+}
+
+// Devuelve un número para poder ordenar horas según el rango actual
+function ordenHoraParaRango(hora) {
+  if (!hora) return 999;
+  const h = parseInt(hora.split(":")[0], 10);
+  const rango = rangoActual(); // usa tu función ya definida
+
+  // Turno día 06–18 → orden normal 06,07,...,17
+  if (rango === "06-18") {
+    if (h >= 6 && h <= 18) return h - 6; // 06 → 0, 18 → 12
+    return 999;
+  }
+
+  // Turno noche 18–06 → 18..23,0..6
+  // 18→0, 19→1, 20→2, 21→3, 22→4, 23→5, 00→6, 01→7, ..., 06→12
+  if (rango === "18-06") {
+    if (h >= 18 && h <= 23) return h - 18;
+    if (h >= 0 && h <= 6)   return h + 6;
+    return 999;
+  }
+
+  // Fallback por si algún día agregás otro rango
+  return h;
+}
+function sortNovedadesArray(list) {
+  list.sort((a, b) => {
+    const la = (a.linea || "");
+    const lb = (b.linea || "");
+    if (la !== lb) return la.localeCompare(lb);
+
+    const ha = ordenHoraParaRango(a.hora || "");
+    const hb = ordenHoraParaRango(b.hora || "");
+
+    if (ha !== hb) return ha - hb;
+    // Si empatan en la “posición dentro del turno”, ordeno por texto de hora
+    return (a.hora || "").localeCompare(b.hora || "");
+  });
 }
 
 
@@ -570,11 +617,10 @@ function renderNovedades() {
   document.querySelectorAll(".linea-card ul").forEach(u => u.innerHTML = "");
 
   // Leer y ordenar
+    // Leer y ordenar según rango actual (06–18 o 18–06)
   const saved = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
-  saved.sort((a, b) =>
-    (a.linea || "").localeCompare(b.linea || "") ||
-    (a.hora || "").localeCompare(b.hora || "")
-  );
+  sortNovedadesArray(saved);
+
 
   // Pintar
   // pintar
@@ -603,6 +649,8 @@ saved.forEach(({ linea, hora, texto }) => {
   const spanTxt = document.createElement("span");
   spanTxt.className = "nv-text";
   spanTxt.textContent = texto;
+
+
   spanTxt.style.flex = "1 1 auto";
 
   const btnDel = document.createElement("button");
@@ -672,8 +720,9 @@ function clearNovedades() {
 function addNovedad(linea, hora, texto, restored = false) {
   if (!restored) {
     const saved = JSON.parse(localStorage.getItem(FORM_KEY) || "[]");
-    saved.push({ linea, hora, texto });
-    saved.sort((a,b)=> (a.linea||"").localeCompare(b.linea||"") || (a.hora||"").localeCompare(b.hora||""));
+        saved.push({ linea, hora, texto });
+    sortNovedadesArray(saved);
+
     localStorage.setItem(FORM_KEY, JSON.stringify(saved));
     if (window.syncNow) window.syncNow();
   }
@@ -704,6 +753,9 @@ formNovedad.addEventListener("submit", e => {
   const linea = nvLinea.value.trim();
   const hora  = (document.getElementById("nvHora")?.value || "").trim();
   const texto = nvTexto.value.trim();
+
+
+
   const rango = document.getElementById("cgRango").value;
 
   if (!linea || !hora || !texto) {
