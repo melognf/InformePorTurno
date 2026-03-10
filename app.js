@@ -893,7 +893,6 @@ function setTableEditing(on) {
   tds.forEach(td => {
     td.setAttribute("contenteditable", on ? "true" : "false");
     td.classList.toggle("is-editing", on);
-    aplicarFiltroFilasCompletadas(isLecturalectura ? true : (localStorage.getItem(TABLA_FILTRO_KEY) === "true"));
 
   });
   
@@ -1048,12 +1047,18 @@ const imgH  = (canvas.height * pageW) / canvas.width;
 if (imgH <= pageH) {
   pdf.addImage(imgData, "PNG", 0, 0, pageW, imgH);
 } else {
-  // Caso multipágina (informe largo)
-  let y = 0;
-  while (y < imgH) {
-    pdf.addImage(imgData, "PNG", 0, -y * (pageH / imgH), pageW, imgH);
-    y += pageH;
-    if (y < imgH - 10) pdf.addPage();
+  // Caso multipágina correcto
+  let heightLeft = imgH;
+  let position = 0;
+
+  pdf.addImage(imgData, "PNG", 0, position, pageW, imgH);
+  heightLeft -= pageH;
+
+  while (heightLeft > 0) {
+    position = heightLeft - imgH; // valor negativo
+    pdf.addPage();
+    pdf.addImage(imgData, "PNG", 0, position, pageW, imgH);
+    heightLeft -= pageH;
   }
 }
 
