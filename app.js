@@ -38,7 +38,22 @@ window.addEventListener("load", () => {
 
 
 // ======== Cronograma ========
-const CG_STATE_KEY = 'cronograma_v1';
+const CG_RANGO_KEY = "cg_rango_v1";
+
+function saveCgRango() {
+  const sel = document.getElementById("cgRango");
+  if (!sel) return;
+  localStorage.setItem(CG_RANGO_KEY, sel.value);
+}
+
+function restoreCgRango() {
+  const sel = document.getElementById("cgRango");
+  if (!sel) return;
+  const saved = localStorage.getItem(CG_RANGO_KEY);
+  if (saved === "06-18" || saved === "18-06") {
+    sel.value = saved;
+  }
+}
 
 const cg = {
   rango: '06-18',
@@ -241,13 +256,17 @@ function restoreCorridas() {
 
 // ======== Inicializa ========
 function cgInit() {
+  restoreCgRango();   // <-- primero restaura el rango guardado
   cgBuildAxis();
   restoreCorridas();
 
   const rangoSel = document.getElementById('cgRango');
   rangoSel.addEventListener('change', () => {
+    saveCgRango();    // <-- guarda cuando cambia
     cgBuildAxis();
     restoreCorridas();
+    buildNvHoraOptions();
+    renderNovedades();
   });
 
   window.addEventListener('resize', () => {
@@ -364,8 +383,9 @@ function buildNvHoraOptions(){
 
 // Construir al cargar
 document.addEventListener("DOMContentLoaded", () => {
+  restoreCgRango();
   buildNvHoraOptions();
-  renderNovedades();   // pinta lo que ya estaba guardado
+  renderNovedades();
 });
 
 // Reconstruir cuando cambia la franja (06–18 / 18–06)
